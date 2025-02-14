@@ -1,5 +1,5 @@
 #!/bin/sh
-# version 1.7 - 26-November 2024
+# version 1.7 - 03-December 2024
 
 get_vpod_repo() {
    # labstartup.sh creates the vPod_SKU.txt file
@@ -12,12 +12,14 @@ get_vpod_repo() {
 }
 
 . /home/holuser/.bashrc
+# firewall is open to the Manager so no proxy needed
+. /home/holuser/noproxy.sh
 
 logfile='/tmp/VLPagentsh.log'
 # delete this one if present
 egwagent='/home/holuser/hol/Tools/egw-agent-1.0.0.jar'
 # install this version
-vlpagentversion='1.0.4'
+vlpagentversion='1.0.5'
 
 gitdrive=/vpodrepo
 prepopstart=/tmp/prepop.txt
@@ -33,6 +35,8 @@ labstartscript=labstart.sh
 [ -f ${egwagent} ] && rm ${egwagent}
 
 # install the VLP Agent (also installs the required JRE version)
+echo "Sleeping 30 seconds before installing VLP Agent..." >> ${logfile}
+sleep 30
 cd /home/holuser/hol
 Tools/vlp-vm-agent-cli.sh install --platform linux-x64 --version ${vlpagentversion} >> ${logfile} 2>&1
 pkill -f -9 "java -jar vlp-agent-${vlpagentversion}.jar" >> ${logfile} 2>&1
@@ -40,8 +44,8 @@ pkill -f -9 "java -jar vlp-agent-${vlpagentversion}.jar" >> ${logfile} 2>&1
 # start the VLP Agent if not running
 lsprocs=`ps -ef | grep jar | grep -v grep`
 if [ "$lsprocs" = "" ];then
-   echo "Sleeping for a minute before starting VLP Agent..." >> ${logfile}
-   sleep 60
+   echo "Sleeping 30 seconds before starting VLP Agent..." >> ${logfile}
+   sleep 30
    echo "Starting VLP Agent:  ${vlpagentversion}" >> ${logfile}
    Tools/vlp-vm-agent-cli.sh start # attempts to capture the output generate "[Fatal Error]"
    [ $? = 0 ] && echo "VLP Agent started." >> ${logfile}

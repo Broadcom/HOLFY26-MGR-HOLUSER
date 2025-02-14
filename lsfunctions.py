@@ -1,4 +1,4 @@
-# lsfunctions.py - version v2.0 - 2-February 2025
+# lsfunctions.py - version v2.0 - 13-February 2025
 # implementing standard naming, removing unneeded legacy code and simplifying where possible
 
 import os
@@ -134,6 +134,8 @@ def init(**kwargs):
     global labtype
     global lab_sku
     global password
+    global vcpassword
+    global esxipass
     global vsphereaccount
     global proxies
     global max_minutes_before_fail
@@ -167,6 +169,16 @@ def init(**kwargs):
         rtrpassword = password
     else:
         password = 'VMware123!'
+    if 'vcenterpass' in config['VPOD'].keys():
+       vcenterpass = config.get('VPOD', 'vcenterpass').split('\n')
+       vcpassword = vcenterpass[0]
+    else:
+       vcpassword = password
+    if 'esxipass' in config['VPOD'].keys():
+       esxipassword = config.get('VPOD', 'esxipass').split('\n')
+       esxipass = esxipassword[0]
+    else:
+       esxipass = password
     if 'maxminutes' in config['VPOD'].keys():
         max_minutes_before_fail = int(config.get('VPOD', 'maxminutes'))
     else:
@@ -572,8 +584,8 @@ def connect_vcenters(entries):
     for now just connect - will attempt restart function after finish with first pass
     param entries: list of vCenter entries from /hol/Resources/vCenters.txt
     """
-    # vc_restarted = False
-    # vc_start_time = start_time
+    global vcpassword
+    global esxipass
     for entry in entries:
         vc = entry.split(':')
         write_output('Connecting to ' + vc[0] + '...')
@@ -582,13 +594,12 @@ def connect_vcenters(entries):
             login_user = vc[2]
         else:
             login_user = vcuser
-        # wait for ping
         test_ping(vc[0])
         if vc_type == 'esx':
-            # vc_restarted = True
             login_user = 'root'
+            vcpassword = esxipass
 
-        while not connect_vc(vc[0], login_user, password):
+        while not connect_vc(vc[0], login_user, vcpassword):
             labstartup_sleep(sleep_seconds)
 
         if type == 'linux':
