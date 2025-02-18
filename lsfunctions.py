@@ -202,9 +202,8 @@ def init(**kwargs):
             if WMC:
                 write_output('Clearing DNS Server cache on Main Console.')
                 runwincmd('dnscmd /clearcache', 'mainconsole', 'Administrator', password)
-            res = subprocess.run(['/usr/bin/nslookup', proxy], 
-                capture_output=True, text=True, check=True)
-            if res.returncode != 0:
+            res = os.system('/usr/bin/nslookup proxy')
+            if res != 0:
                 write_output(f'Waiting for DNS to resolve {proxy} - pause 30 seconds...')
                 labstartup_sleep(30)
             else:
