@@ -1,5 +1,5 @@
 #! /bin/sh
-# version 1.1 - 11-October 2024
+# version 1.2 - 20-February 2025
 
 # the only job of this script is to do the initial Core Team git pull
 # and then call the lastest versions of VLPagent.sh and labstartup.sh
@@ -15,26 +15,12 @@ cd /home/holuser/hol
 
 hol="/home/holuser"
 
-internalgit=10.138.147.254
-externalgit=holgitlab.oc.vmware.com
-
-status=`ssh -o ConnectTimeout=5 -T git@$internalgit`
-if [ $? != 0 ];then
-   vPod_SKU=`grep vPod_SKU /tmp/vPod.txt | cut -f2 -d '=' | sed 's/\r$//' | xargs`
-   year=`echo ${vPod_SKU} | cut -c5-6`
-   index=`echo ${vPod_SKU} | cut -c7-8`
-   vpod="/vpodrepo/20${year}-labs/${year}${index}" 
-   
-   repos="${hol}/hol^holuser ${hol}/autocheck^holuser ${vpod}^holuser"
-   for repo in $repos
-   do
-      repodir=`echo $repo | cut -f1 -d ^`
-      cat ${repodir}/.git/config | sed s/$internalgit/$externalgit/g > ${repodir}/.git/newconfig
-      mv ${repodir}/.git/config ${repodir}/.git/oldconfig
-      mv ${repodir}/.git/newconfig ${repodir}/.git/config
-      chmod 664 ${repodir}/.git/config
-   done
-fi
+proxyready=`nmap -p 3128 proxy | grep open`
+while [ $? != 0 ];do
+   echo "Waiting for proxy to be ready..." >> ${logfile}
+   proxyready=`nmap -p 3128 proxy | grep open`
+   sleep 1
+done
 
 ctr=0
 while true;do
