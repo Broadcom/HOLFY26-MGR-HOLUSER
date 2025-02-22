@@ -1,5 +1,5 @@
 #! /bin/sh
-# version 1.29 23-January 2025
+# version 1.30 21-February 2025
 
 git_pull() {
    cd $1
@@ -122,7 +122,7 @@ else  # normal first run with no labcheck argument
    fi
 fi
 
-# copy the config.ini from the mainconsole to /tmp
+# copy the config.ini from the Console to /tmp
 if [ -f ${mcholroot}/config.ini ];then
    echo "Copying ${mcholroot}/config.ini to ${configini}..." >> ${logfile}
    cp ${mcholroot}/config.ini ${configini}

@@ -1,4 +1,4 @@
-# prelim.py version 1.13 18-April 2024
+# prelim.py version 1.14 21-February 2025
 import sys
 import os
 import glob
@@ -105,21 +105,21 @@ if lsf.labcheck == False and checkfw == True:
     output = []
     if lsf.LMC:
         try:
-            fwout = lsf.ssh('/usr/bin/python3 /tmp/checkfw.py', 'holuser@mainconsole', lsf.password)
+            fwout = lsf.ssh('/usr/bin/python3 /tmp/checkfw.py', 'holuser@console', lsf.password)
             output = fwout.stdout
         except Exception as e:
             lsf.write_output(f'Error ruuning checkfw.py: {e}')
     elif lsf.WMC:
         try:
-            output = lsf.runwincmd('python C:\\Temp\\checkfw.py', 'mainconsole', 'Administrator', lsf.password, logfile=lsf.logfile)
+            output = lsf.runwincmd('python C:\\Temp\\checkfw.py', 'console', 'Administrator', lsf.password, logfile=lsf.logfile)
         except Exception as e:
             lsf.write_output(f'Error ruuning checkfw.py: {e}')
     while 'Good' not in output and ctr < maxctr:
         if lsf.LMC:
-            fwout = lsf.ssh('/usr/bin/python3 /tmp/checkfw.py', 'holuser@mainconsole', lsf.password)
+            fwout = lsf.ssh('/usr/bin/python3 /tmp/checkfw.py', 'holuser@console', lsf.password)
             output = fwout.stdout
         elif lsf.WMC:
-            output = lsf.runwincmd('python C:\\Temp\\checkfw.py', 'mainconsole', 'Administrator', lsf.password, logfile=lsf.logfile)        
+            output = lsf.runwincmd('python C:\\Temp\\checkfw.py', 'console', 'Administrator', lsf.password, logfile=lsf.logfile)        
         for line in output:
             if 'Good' in line:
                 fwok = True
@@ -144,8 +144,8 @@ if lsf.WMC and lsf.labcheck == False:
     os.system(f'cp {lsf.holroot}/Tools/WMCstartup.ps1 {lsf.mc}/{admindir}/')
     # C:\Program Files\PowerShell\7\pwsh.exe
     command = 'pwsh C:\\Users\\Administrator\\WMCstartup.ps1 > C:\\Users\\Administrator\\WMCstartup.log'
-    lsf.write_output('Running WMCstartup.ps1 on mainconsole. Please stand by...', logfile=lsf.logfile)
-    lsf.runwincmd(command, 'mainconsole', 'Administrator', lsf.password, logfile=lsf.logfile)
+    lsf.write_output('Running WMCstartup.ps1 on console. Please stand by...', logfile=lsf.logfile)
+    lsf.runwincmd(command, 'console', 'Administrator', lsf.password, logfile=lsf.logfile)
     with open(f'{lsf.mc}/{admindir}/WMCstartup.log', 'r') as ologfile:
         olog = ologfile.readlines()
     ologfile.close()
@@ -173,7 +173,7 @@ elif lsf.LMC:
     odyssey_app = 'odyssey-client-linux.AppImage'
     odyssey_launcher = 'odyssey-launch.sh'
     odyssey_dst = f'desktop-hol'
-    lmcuser = 'holuser@mainconsole'
+    lmcuser = 'holuser@console'
 
 # on initial boot remove the Odyssey files if present
 if not lsf.labcheck:

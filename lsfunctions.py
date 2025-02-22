@@ -1,4 +1,4 @@
-# lsfunctions.py - version v2.0 - 13-February 2025
+# lsfunctions.py - version v2.1 - 21-February 2025
 # implementing standard naming, removing unneeded legacy code and simplifying where possible
 
 import os
@@ -201,7 +201,7 @@ def init(**kwargs):
         while True:
             if WMC:
                 write_output('Clearing DNS Server cache on Main Console.')
-                runwincmd('dnscmd /clearcache', 'mainconsole', 'Administrator', password)
+                runwincmd('dnscmd /clearcache', 'console', 'Administrator', password)
             res = os.system('/usr/bin/nslookup proxy')
             if res != 0:
                 write_output(f'Waiting for DNS to resolve {proxy} - pause 30 seconds...')
@@ -290,7 +290,7 @@ def parse_labsku(sku):
             tempfile.write(line)
     tempfile.close()
     if LMC:
-        ssh(f'export XAUTHORITY={XAUTHORITY};pkill conky;/home/holuser/.conky/conky-startup.sh', 'holuser@mainconsole', password)
+        ssh(f'export XAUTHORITY={XAUTHORITY};pkill conky;/home/holuser/.conky/conky-startup.sh', 'holuser@console', password)
 
 
 def postmanfix():
@@ -324,7 +324,7 @@ def postmanfix():
         hfile.close()
     
         if LMC:
-            scp(localhosts, 'root@mainconsole:/etc/hosts', password)
+            scp(localhosts, 'root@console:/etc/hosts', password)
 
 
 def run_command(cmd):
@@ -417,7 +417,7 @@ def set_status_color(color):
             tempfile.write(line)
     tempfile.close()
     if LMC:
-        ssh(f'export XAUTHORITY={XAUTHORITY};pkill conky;/home/holuser/.conky/conky-startup.sh', 'holuser@mainconsole', password)
+        ssh(f'export XAUTHORITY={XAUTHORITY};pkill conky;/home/holuser/.conky/conky-startup.sh', 'holuser@console', password)
 
 
 def write_vpodprogress(display, code, **kwargs):
@@ -1682,11 +1682,11 @@ def start_autocheck():
             write_output(f'Finished with {thescript}')
             # unmount the iDisk
             write_output('Unmounting iDisk...')
-            ssh('/usr/bin/umount /mnt/idisk', 'root@mainconsole', password)
+            ssh('/usr/bin/umount /mnt/idisk', 'root@console', password)
             write_output('iDisk unmounted.')
             # eject the CD
             write_output('Ejecting the CD...')
-            ssh('/usr/bin/eject', 'root@mainconsole', password)
+            ssh('/usr/bin/eject', 'root@console', password)
             write_output('AutoCheck CD ejected.')
             aclog.close()
             acerr.close()
