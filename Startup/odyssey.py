@@ -1,4 +1,4 @@
-# odyssey.py - version v1.7 - 23-February 2024
+# odyssey.py - version v1.8 - 21-February 2025
 import sys
 import lsfunctions as lsf
 import os
@@ -53,7 +53,7 @@ elif lsf.LMC:
     odyssey_launcher = 'odyssey-launch.sh'
     ody_icon = 'icon-256.png'
     odyssey_dst = f'home/holuser/desktop-hol'
-    lmcuser = f'holuser@mainconsole.{lsf.dom}'
+    lmcuser = f'holuser@console.{lsf.dom}'
 
 odyssey_launcher_src = f'https://odyssey.vmware.com/client/{odyssey_app}'
 # print(odyssey_launcher_src)
@@ -114,8 +114,8 @@ if run_odyssey_prep and lsf.odyssey and not lsf.labcheck:  # VLP deployments and
         os.system(f'cp {lsf.holroot}/Tools/WMC-Odyssey-prep.ps1 {lsf.mc}/{odyssey_dst}/')
         # C:\Program Files\PowerShell\7\pwsh.exe
         command = 'pwsh C:\\Users\\Administrator\\WMC-Odyssey-prep.ps1 > C:\\Users\\Administrator\\odyssey-prep.log'
-        lsf.write_output('Running WMC-Odyssey-prep.ps1 on mainconsole. Please stand by...', logfile=lsf.logfile)
-        result = lsf.runwincmd(command, 'mainconsole', 'Administrator', lsf.password, logfile=lsf.logfile)
+        lsf.write_output('Running WMC-Odyssey-prep.ps1 on Console. Please stand by...', logfile=lsf.logfile)
+        result = lsf.runwincmd(command, 'console', 'Administrator', lsf.password, logfile=lsf.logfile)
         with open(f'{lsf.mc}/{odyssey_dst}/odyssey-prep.log', 'r') as ologfile:
             olog = ologfile.readlines()
         ologfile.close()
