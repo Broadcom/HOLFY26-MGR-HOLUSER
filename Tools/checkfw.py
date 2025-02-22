@@ -1,6 +1,9 @@
-# checkfw.py version 1.2 10-April 2024
+# checkfw.py version 1.3 22-February 2025
 import socket
+import platform
 
+global os_type
+os_type = platform.system()
 
 def test_tcp_port(server, port):
     """
@@ -11,6 +14,10 @@ def test_tcp_port(server, port):
     """
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.settimeout(2)
+    if os_type == 'Linux':
+        logfile = '/tmp/checkfw.err'
+    else:
+        logfile = 'C:\\TEMP\\checkfw.err'
     try:
         s.connect((server, int(port)))
         s.shutdown(2)
@@ -18,14 +25,13 @@ def test_tcp_port(server, port):
         return True
     except IOError as e:
         print(e)
-        with open("checkfw.err", "a") as lf:
+        with open(logfile, "a") as lf:
             lf.write(f'{e}\n')
             lf.close()
         return False
 
 
-#status = test_tcp_port('www.opendomainfornowjunk.com', 443)
-status = test_tcp_port('www.vmware.com', 443)
+status = test_tcp_port('www.broadcom.com', 443)
 if status == False:
     print("Good")
 else:
