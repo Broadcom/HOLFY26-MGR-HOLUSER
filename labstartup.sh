@@ -68,6 +68,7 @@ holroot=/home/holuser/hol
 gitdrive=/vpodrepo
 lmcholroot=/lmchol/hol
 wmcholroot=/wmchol/hol
+credsini=/home/holuser/creds.ini
 configini=/tmp/config.ini
 logfile=/tmp/labstartupsh.log
 sshoptions='StrictHostKeyChecking=accept-new'
@@ -148,17 +149,14 @@ while [ ! -d ${gitdrive}/lost+found ];do
    fi
 done
 
-# some timing issue on cold boot up
-#sleep 5
-
 # the Core Team git pull is done using gitpull.sh at boot up
 # still need to do the vPod git pull
 if [ -f ${configini} ];then
    echo "Getting vPod_SKU from ${configini}" >> ${logfile}
    # get the vPod_SKU from $configini removing Windows carriage return if present
    vPod_SKU=`grep vPod_SKU ${configini} | grep -v \# | cut -f2 -d= | sed 's/\r$//' | xargs`
-   # get the password from $config
-   password=`grep 'password =' ${configini} | grep -v \# | cut -f2 -d= | sed 's/\r$//' | xargs`
+   # get the password from $credsini
+   password=`grep 'vPod =' ${credsini} | cut -f2 -d '=' | xargs`
    # get the lab type
    labtype=`grep 'labtype =' ${configini} | grep -v \# | cut -f2 -d= | sed 's/\r$//' | xargs`
    [ "${labtype}" = "" ] && labtype="HOL"
@@ -277,7 +275,7 @@ fi
 > /tmp/gitdone
 
 if [ -f ${configini} ];then
-   runlabstartup
+   #runlabstartup
    echo "$0 finished." >> ${logfile}
 else
    echo "No config.ini on Main Console or vpodrepo. Abort." >> ${logfile}
