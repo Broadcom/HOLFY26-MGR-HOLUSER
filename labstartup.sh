@@ -87,6 +87,16 @@ fi
 # remove all the at jobs before starting
 for i in `atq | awk '{print $1}'`;do atrm $i;done
 
+# pause until the creds.ini file is present
+while true;do
+   echo "Waiting for ${credsini} file..." >> ${logfile}
+   if [ -f ${credsini} ];then
+      echo "Have the ${credsini} file. Continuing..." >> ${logfile}
+      break
+   fi
+   sleep 5
+done
+
 # pause until mount is present
 while true;do
    if [ -d ${lmcholroot} ];then
@@ -275,7 +285,7 @@ fi
 > /tmp/gitdone
 
 if [ -f ${configini} ];then
-   #runlabstartup
+   runlabstartup
    echo "$0 finished." >> ${logfile}
 else
    echo "No config.ini on Main Console or vpodrepo. Abort." >> ${logfile}
