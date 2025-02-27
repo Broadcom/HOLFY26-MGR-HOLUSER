@@ -1,4 +1,4 @@
-# lsfunctions.py - version v2.1 - 21-February 2025
+# lsfunctions.py - version v2.2 - 27-February 2025
 # implementing standard naming, removing unneeded legacy code and simplifying where possible
 
 import os
@@ -43,6 +43,7 @@ bad_sku = 'HOL-BADSKU'
 lab_sku = bad_sku
 configname = 'config.ini'
 configini = f'/tmp/{configname}'
+credsini = f'{home}/creds.ini'
 router = 'router.site-a.vcf.lab'
 proxy = 'proxy.site-a.vcf.lab'
 XAUTHORITY = ''
@@ -51,6 +52,8 @@ if os.path.isfile(configini):
     # Read the latest config.ini file to set globals
     config = ConfigParser()
     config.read(configini)
+    creds = ConfigParser()
+    creds.read(credsini)
     lab_sku = config.get('VPOD', 'vPod_SKU')
     lab_year = lab_sku[4:6]
     lab_num = lab_sku[6:8]
@@ -164,18 +167,17 @@ def init(**kwargs):
         vsphereaccount = config.get('VPOD', 'vsphereaccount').split('\n')
     else:
         vsphereaccount = 'administrator@vsphere.local'
-    if 'password' in config['VPOD'].keys():
-        password = config.get('VPOD', 'password')
+    if 'vPod' in creds['CREDS'].keys():
+        pword = creds.get('CREDS', 'vPod').split('\n')
+        password = pword[0]
         rtrpassword = password
-    else:
-        password = 'XXX'
-    if 'vcenterpass' in config['VPOD'].keys():
-       vcenterpass = config.get('VPOD', 'vcenterpass').split('\n')
+    if 'vcenterpass' in creds['CREDS'].keys():
+       vcenterpass = creds.get('CREDS', 'vcenterpass').split('\n')
        vcpassword = vcenterpass[0]
     else:
        vcpassword = password
-    if 'esxipass' in config['VPOD'].keys():
-       esxipassword = config.get('VPOD', 'esxipass').split('\n')
+    if 'esxipass' in creds['CREDS'].keys():
+       esxipassword = creds.get('CREDS', 'esxipass').split('\n')
        esxipass = esxipassword[0]
     else:
        esxipass = password
