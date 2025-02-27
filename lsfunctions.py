@@ -168,7 +168,7 @@ def init(**kwargs):
         password = config.get('VPOD', 'password')
         rtrpassword = password
     else:
-        password = 'VMware123!'
+        password = 'XXX'
     if 'vcenterpass' in config['VPOD'].keys():
        vcenterpass = config.get('VPOD', 'vcenterpass').split('\n')
        vcpassword = vcenterpass[0]
@@ -1461,13 +1461,13 @@ def managelinuxservice(action, server, service, waitsec, pw):
         write_output(f'Failed to {action} {service} on {server} -- {e}')
         return ret
 
-def runwincmd(cmd, server, user='Administrator', pw='VMware123!', **kwargs):
+def runwincmd(cmd, server, user='Administrator', pw='XXX', **kwargs):
     """
     This function runs a command on a remote Windows machine
     :param cmd: the command to run
     :param server: the remote Windows machine hostname
     :param user: default Administrator
-    :param pw: password to use default VMware123!
+    :param pw: to use default XXX
     """
     stdout = ''
     lfile = kwargs.get('logfile', logfile)
