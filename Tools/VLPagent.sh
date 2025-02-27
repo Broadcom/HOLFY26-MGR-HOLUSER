@@ -19,13 +19,14 @@ logfile='/tmp/VLPagentsh.log'
 # delete this one if present
 egwagent='/home/holuser/hol/Tools/egw-agent-1.0.0.jar'
 # install this version
-vlpagentversion='1.0.5'
+vlpagentversion='1.0.6'
 
 gitdrive=/vpodrepo
 prepopstart=/tmp/prepop.txt
 prepopstartscript=prepopstart.sh
 labstart=/tmp/labstart.txt
 labstartscript=labstart.sh
+vlpagentdir=/home/holuser/hol/vlp-agent
 
 # cleanup some leftover dev files
 [ -f /home/holuser/egwagent/labactive.sh ] && rm /home/holuser/egwagent/labactive.sh
@@ -33,6 +34,12 @@ labstartscript=labstart.sh
 [ -f /home/holuser/egwagent/test_create_file.sh ] && rm /home/holuser/egwagent/test_create_file.sh
 
 [ -f ${egwagent} ] && rm ${egwagent}
+
+# clean up old vlp-agent jar files if present
+jars=`ls ${vlpagentdir}/vlp-agent-*.jar`
+for file in $jars;do
+   [ $file != ${vlpagentdir}/vlp-agent-${vlpagentversion}.jar ] && rm $file
+done
 
 # install the VLP Agent (also installs the required JRE version)
 echo "Sleeping 30 seconds before installing VLP Agent..." >> ${logfile}
