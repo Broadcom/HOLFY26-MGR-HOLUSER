@@ -1,5 +1,5 @@
 #! /bin/sh
-# version 1.30 21-February 2025
+# version 1.31 28-February 2025
 
 git_pull() {
    cd $1
@@ -307,7 +307,7 @@ fi
 > /tmp/gitdone
 
 if [ -f ${configini} ];then
-   #runlabstartup
+   runlabstartup
    echo "$0 finished." >> ${logfile}
 else
    echo "No config.ini on Main Console or vpodrepo. Abort." >> ${logfile}
