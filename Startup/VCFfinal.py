@@ -1,4 +1,4 @@
-# Tanzu.py version 0.2 31-December 2024
+# VCFfinal.py version 1.0 28-February 2025
 import datetime
 import os
 import sys
@@ -83,10 +83,10 @@ if 'tanzucreate' in lsf.config['VCFFINAL'].keys():
     lsf.labstartup_sleep(600)
 
     # centos machine is 10.0.0.3 /root/TanzuCreate script. recommend DNS entry
-    (tchost, tcaccount, tcpassword, tcscript) = tanzucreate[0].split(':')
-    lsf.write_output(f'Running {tcscript} as {tcaccount}@{tchost} with password {tcpassword}')
+    (tchost, tcaccount, tcscript) = tanzucreate[0].split(':')
+    lsf.write_output(f'Running {tcscript} as {tcaccount}@{tchost} with password lsf.password')
     # DEBUG comment out
-    result = lsf.ssh(tcscript, f'{tcaccount}@{tchost}', tcpassword, logfile=lsf.logfile)
+    result = lsf.ssh(tcscript, f'{tcaccount}@{tchost}', lsf.password, logfile=lsf.logfile)
     lsf.write_output(result.stdout)
 
 ######Start Aria Automtation VMs
