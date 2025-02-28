@@ -1,11 +1,6 @@
 #! /bin/sh
-# 19-February 2024
+# 28-February 2025
 
-# removing support for pfSense router
-#if `nc -z 10.0.0.1 443`;then
-#	echo "pfSense router detected. Add the dot to the Squid denylist to enble proxy."
-#	exit
-#fi
-
-/usr/bin/sshpass -p VMware123! ssh root@router /root/proxyfilter.sh --on
+pass=`cat /home/holuser/creds.txt`
+/usr/bin/sshpass -p ${pass} ssh root@router /root/proxyfilter.sh --on
 echo "Proxy filtering is enabled. Applications must use proxy."
