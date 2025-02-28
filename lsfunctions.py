@@ -1,4 +1,4 @@
-# lsfunctions.py - version v2.2 - 27-February 2025
+# lsfunctions.py - version v2.3 - 28-February 2025
 # implementing standard naming, removing unneeded legacy code and simplifying where possible
 
 import os
@@ -43,7 +43,7 @@ bad_sku = 'HOL-BADSKU'
 lab_sku = bad_sku
 configname = 'config.ini'
 configini = f'/tmp/{configname}'
-credsini = f'{home}/creds.ini'
+creds = f'{home}/creds.txt'
 router = 'router.site-a.vcf.lab'
 proxy = 'proxy.site-a.vcf.lab'
 XAUTHORITY = ''
@@ -135,8 +135,6 @@ def init(**kwargs):
     global labtype
     global lab_sku
     global password
-    global vcpassword
-    global esxipass
     global vsphereaccount
     global proxies
     global max_minutes_before_fail
@@ -144,16 +142,11 @@ def init(**kwargs):
     global labcheckinterval
     global versiontxt
     global XAUTHORITY
-    
-    creds = ConfigParser()
-    if os.path.isfile(credsini):
-        creds.read(credsini)
-    else:
-        creds.read(f'{home}/devcreds.ini')
-    
+     
     lfile = kwargs.get('logfile', logfile)
     chkrouter = kwargs.get('router', True)
     start_time = datetime.datetime.now()
+    password = getfilecontents(creds)
     
     if lab_sku == bad_sku:
         labtype = 'HOL'
@@ -171,20 +164,6 @@ def init(**kwargs):
         vsphereaccount = config.get('VPOD', 'vsphereaccount').split('\n')
     else:
         vsphereaccount = 'administrator@vsphere.local'
-    if 'vPod' in creds['CREDS'].keys():
-        pword = creds.get('CREDS', 'vPod').split('\n')
-        password = pword[0]
-        rtrpassword = password
-    if 'vcenterpass' in creds['CREDS'].keys():
-       vcenterpass = creds.get('CREDS', 'vcenterpass').split('\n')
-       vcpassword = vcenterpass[0]
-    else:
-       vcpassword = password
-    if 'esxipass' in creds['CREDS'].keys():
-       esxipassword = creds.get('CREDS', 'esxipass').split('\n')
-       esxipass = esxipassword[0]
-    else:
-       esxipass = password
     if 'maxminutes' in config['VPOD'].keys():
         max_minutes_before_fail = int(config.get('VPOD', 'maxminutes'))
     else:
@@ -224,7 +203,7 @@ def init(**kwargs):
         lcmd = 'date'
         while True:
             logging.debug(f'Running date commnand on holuser@{router}')
-            result = ssh(lcmd, f'holuser@{router}', rtrpassword)
+            result = ssh(lcmd, f'holuser@{router}', password)
             if "UTC" in result.stdout:
                 break
             labstartup_sleep(sleep_seconds)
@@ -586,11 +565,8 @@ def test_tcp_port(server, port, **kwargs):
 
 def connect_vcenters(entries):
     """
-    for now just connect - will attempt restart function after finish with first pass
-    param entries: list of vCenter entries from /hol/Resources/vCenters.txt
+    param entries: list of vCenter entries from config.ini
     """
-    global vcpassword
-    global esxipass
     for entry in entries:
         vc = entry.split(':')
         write_output('Connecting to ' + vc[0] + '...')
@@ -602,9 +578,8 @@ def connect_vcenters(entries):
         test_ping(vc[0])
         if vc_type == 'esx':
             login_user = 'root'
-            vcpassword = esxipass
 
-        while not connect_vc(vc[0], login_user, vcpassword):
+        while not connect_vc(vc[0], login_user, password):
             labstartup_sleep(sleep_seconds)
 
         if type == 'linux':
@@ -1281,7 +1256,7 @@ def ssh(cmd, rh, pw, **kwargs):
     """
     param cmd: the command to run
     param rh: the remote host specified as user@remotehost
-    param pw: the password or password from config.ini if blank
+    param pw: the password or password from creds.txt if blank
     """
     lfile = kwargs.get('logfile', logfile)
     run = subprocess.CompletedProcess
@@ -1427,7 +1402,7 @@ def managelinuxservice(action, server, service, waitsec, pw):
     :param server: the target ssh server optional account@hostname
     :param service: the name of the Linux service
     :param waitsec: the number of seconds to sleep (optional 30 default)
-    :param pw: the password - default is the password from config.ini
+    :param pw: the password - default is the password from creds.txt
     """
     lcmd1 = f'service {service} {action}'
     lcmd2 = f'service {service} status'
@@ -1536,7 +1511,7 @@ def managewindowsservice(action, server, service, user='holuser', pw='', waitsec
     :param server: the Windows machine hostname
     :param service: the name of the Windows service
     :param user: default holuser
-    :param pw: password to use default password as defined in config.ini
+    :param pw: password to use default password as defined in creds.txt
     :param waitsec: default 30 seconds
     """
     arg2 = ''
@@ -1593,7 +1568,7 @@ def psexec_cleanup(server, user='holuser', pw=''):
     This function removes any leftover PAExec services on the server
     :param server: the server to clean
     :param user: optional default is holuser
-    :param pw: optonal default is password as defined in config.ini
+    :param pw: optonal default is password as defined in creds.txt
     """
     if pw == '':
         pw = password

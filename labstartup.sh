@@ -64,18 +64,12 @@ get_vpod_repo() {
    vpodgitdir="${yearrepo}/${year}${index}"
 }
 
-get_cloud_info() {
-   cloudinfo=`/usr/bin/vmtoolsd --cmd "info-get guestinfo.ovfenv" 2>&1 | grep vlp_org_name | cut -f3 -d: | cut -f2 -d\"`
-   [ -z "${cloudinfo}" ] && cloudinfo='NOT REPORTED'
-   echo $cloudinfo > /tmp/cloudinfo.txt
-}
-
 holroot=/home/holuser/hol
 gitdrive=/vpodrepo
 lmcholroot=/lmchol/hol
 wmcholroot=/wmchol/hol
 configini=/tmp/config.ini
-credsini=/home/holuser/creds.ini
+creds=/home/holuser/creds.txt
 cloudinfo='NOT REPORTED'
 logfile=/tmp/labstartupsh.log
 sshoptions='StrictHostKeyChecking=accept-new'
@@ -93,31 +87,6 @@ fi
 
 # remove all the labcheck at jobs before starting
 for i in `atq | awk '{print $1}'`;do atrm $i;done
-
-get_cloud_info
-if [ "${cloudinfo}" != "NOT REPORTED" ];then
-
-   echo "Production deployment." > ${logfile}
-
-   # Start the VLP Agent 
-   /home/holuser/hol/Tools/VLPagent.sh &
-   echo "Waiting for the VLP Agent to start..."
-   sleep 30
-
-   # pause until the creds.ini file is present
-   while true;do
-      echo "Waiting for ${credsini} file..." >> ${logfile}
-      if [ -f ${credsini} ];then
-         echo "Have the ${credsini} file. Continuing..." >> ${logfile}
-         creds=${credsini}
-         break
-      fi
-      sleep 5
-   done
-else
-   echo "Dev deployment." > ${logfile}
-   creds=/home/holuser/devcreds.ini
-fi
 
 # pause until mount is present
 while true;do
@@ -188,7 +157,7 @@ if [ -f ${configini} ];then
    # get the vPod_SKU from $configini removing Windows carriage return if present
    vPod_SKU=`grep vPod_SKU ${configini} | grep -v \# | cut -f2 -d= | sed 's/\r$//' | xargs`
    # get the password from $creds
-   password=`grep 'vPod =' ${creds} | cut -f2 -d '=' | xargs`
+   password=`cat /home/holuser/creds.txt`
    # get the lab type
    labtype=`grep 'labtype =' ${configini} | grep -v \# | cut -f2 -d= | sed 's/\r$//' | xargs`
    [ "${labtype}" = "" ] && labtype="HOL"
