@@ -109,6 +109,18 @@ while true;do
    sleep 5
 done
 
+# start the VLP Agent in prod if not already running
+startagent=`ps -ef | grep VLPagent.sh | grep -v grep`
+if [ "${startagent}" = "" ];then
+   cloud=`/usr/bin/vmtoolsd --cmd "info-get guestinfo.ovfenv" 2>&1 | grep vlp_org_name | cut -f3 -d: | cut -f2 -d\\`
+   if [ "${cloud}" = "" ];then
+      echo "Dev environment. Not starting VLP Agent." >> ${logfile}
+   else
+      echo "Prod environment. Starting VLP Agent." >> ${logfile}
+      /home/holuser/Tools/VLPagent.sh &
+   fi
+fi
+
 startupstatus=${mcholroot}/startup_status.txt
 
 # if run with the labcheck argument, only pass on to labstartup.py and exit
