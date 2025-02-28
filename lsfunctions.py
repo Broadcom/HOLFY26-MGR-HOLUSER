@@ -52,8 +52,6 @@ if os.path.isfile(configini):
     # Read the latest config.ini file to set globals
     config = ConfigParser()
     config.read(configini)
-    creds = ConfigParser()
-    creds.read(credsini)
     lab_sku = config.get('VPOD', 'vPod_SKU')
     lab_year = lab_sku[4:6]
     lab_num = lab_sku[6:8]
@@ -146,6 +144,12 @@ def init(**kwargs):
     global labcheckinterval
     global versiontxt
     global XAUTHORITY
+    
+    creds = ConfigParser()
+    if os.path.isfile(credsini):
+        creds.read(credsini)
+    else:
+        creds.read(f'{home}/devcreds.ini')
     
     lfile = kwargs.get('logfile', logfile)
     chkrouter = kwargs.get('router', True)

@@ -19,13 +19,14 @@ logfile='/tmp/VLPagentsh.log'
 # delete this one if present
 egwagent='/home/holuser/hol/Tools/egw-agent-1.0.0.jar'
 # install this version
-vlpagentversion='1.0.5'
+vlpagentversion='1.0.6'
 
 gitdrive=/vpodrepo
 prepopstart=/tmp/prepop.txt
 prepopstartscript=prepopstart.sh
 labstart=/tmp/labstart.txt
 labstartscript=labstart.sh
+vlpagentdir=/home/holuser/hol/vlp-agent
 
 # cleanup some leftover dev files
 [ -f /home/holuser/egwagent/labactive.sh ] && rm /home/holuser/egwagent/labactive.sh
@@ -34,9 +35,15 @@ labstartscript=labstart.sh
 
 [ -f ${egwagent} ] && rm ${egwagent}
 
+# clean up old vlp-agent jar files if present
+jars=`ls ${vlpagentdir}/vlp-agent-*.jar`
+for file in $jars;do
+   [ $file != ${vlpagentdir}/vlp-agent-${vlpagentversion}.jar ] && rm $file
+done
+
 # install the VLP Agent (also installs the required JRE version)
-echo "Sleeping 30 seconds before installing VLP Agent..." >> ${logfile}
-sleep 30
+echo "Sleeping 15 seconds before installing VLP Agent..." >> ${logfile}
+sleep 15
 cd /home/holuser/hol
 Tools/vlp-vm-agent-cli.sh install --platform linux-x64 --version ${vlpagentversion} >> ${logfile} 2>&1
 pkill -f -9 "java -jar vlp-agent-${vlpagentversion}.jar" >> ${logfile} 2>&1
@@ -44,8 +51,8 @@ pkill -f -9 "java -jar vlp-agent-${vlpagentversion}.jar" >> ${logfile} 2>&1
 # start the VLP Agent if not running
 lsprocs=`ps -ef | grep jar | grep -v grep`
 if [ "$lsprocs" = "" ];then
-   echo "Sleeping 30 seconds before starting VLP Agent..." >> ${logfile}
-   sleep 30
+   echo "Sleeping 15 seconds before starting VLP Agent..." >> ${logfile}
+   sleep 15
    echo "Starting VLP Agent:  ${vlpagentversion}" >> ${logfile}
    Tools/vlp-vm-agent-cli.sh start # attempts to capture the output generate "[Fatal Error]"
    [ $? = 0 ] && echo "VLP Agent started." >> ${logfile}
