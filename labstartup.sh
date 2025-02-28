@@ -1,5 +1,5 @@
 #! /bin/sh
-# version 1.31 28-February 2025
+# version 1.32 28-February 2025
 
 git_pull() {
    cd $1
@@ -115,8 +115,10 @@ if [ "${startagent}" = "" ];then
    cloud=`/usr/bin/vmtoolsd --cmd "info-get guestinfo.ovfenv" 2>&1 | grep vlp_org_name | cut -f3 -d: | cut -f2 -d\\`
    if [ "${cloud}" = "" ];then
       echo "Dev environment. Not starting VLP Agent." >> ${logfile}
+      echo "NOT REPORTED" > /tmp/cloudinfo.txt
    else
       echo "Prod environment. Starting VLP Agent." >> ${logfile}
+      echo $cloud > /tmp/cloudinfo.txt
       /home/holuser/Tools/VLPagent.sh &
    fi
 fi
