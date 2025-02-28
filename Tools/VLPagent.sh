@@ -42,8 +42,8 @@ for file in $jars;do
 done
 
 # install the VLP Agent (also installs the required JRE version)
-echo "Sleeping 30 seconds before installing VLP Agent..." >> ${logfile}
-sleep 30
+echo "Sleeping 15 seconds before installing VLP Agent..." >> ${logfile}
+sleep 15
 cd /home/holuser/hol
 Tools/vlp-vm-agent-cli.sh install --platform linux-x64 --version ${vlpagentversion} >> ${logfile} 2>&1
 pkill -f -9 "java -jar vlp-agent-${vlpagentversion}.jar" >> ${logfile} 2>&1
@@ -51,8 +51,8 @@ pkill -f -9 "java -jar vlp-agent-${vlpagentversion}.jar" >> ${logfile} 2>&1
 # start the VLP Agent if not running
 lsprocs=`ps -ef | grep jar | grep -v grep`
 if [ "$lsprocs" = "" ];then
-   echo "Sleeping 30 seconds before starting VLP Agent..." >> ${logfile}
-   sleep 30
+   echo "Sleeping 15 seconds before starting VLP Agent..." >> ${logfile}
+   sleep 15
    echo "Starting VLP Agent:  ${vlpagentversion}" >> ${logfile}
    Tools/vlp-vm-agent-cli.sh start # attempts to capture the output generate "[Fatal Error]"
    [ $? = 0 ] && echo "VLP Agent started." >> ${logfile}

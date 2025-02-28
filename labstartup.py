@@ -56,14 +56,6 @@ else:
     lsf.write_output('Beginning Main script')
     lsf.write_vpodprogress('Not Ready', 'STARTING', color=color)  # recorded on desktop
 
-###
-# Report current cloud using guestinfo provided by VLP
-cloudinfo = '/tmp/cloudinfo.txt'
-hostcloud = lsf.get_cloudinfo()
-with open(cloudinfo, "w") as f:
-    f.write(hostcloud)
-    f.close()
-
 # add custom preliminary tasks to /hol/Startup/prelim.py
 lsf.startup('prelim')
 
@@ -136,7 +128,7 @@ if lsf.labcheckinterval > 0:
 
 ###
 # Report current cloud using guestinfo provided by VLP
-lsf.write_output(f'Hosting Cloud: {hostcloud}')
+lsf.write_output(f'Hosting Cloud: {lsf.get_cloudinfo()}')
 
 ###
 # Report final Ready state and duration of run
