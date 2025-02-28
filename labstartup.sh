@@ -119,7 +119,7 @@ if [ "${startagent}" = "" ];then
    else
       echo "Prod environment. Starting VLP Agent." >> ${logfile}
       echo $cloud > /tmp/cloudinfo.txt
-      /home/holuser/Tools/VLPagent.sh &
+      /home/holuser/hol/Tools/VLPagent.sh &
    fi
 fi
 
