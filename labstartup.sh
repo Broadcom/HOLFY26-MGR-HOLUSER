@@ -1,5 +1,5 @@
 #! /bin/sh
-# version 1.32 28-February 2025
+# version 1.33 04-March 2025
 
 git_pull() {
    cd $1
