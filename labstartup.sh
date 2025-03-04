@@ -16,7 +16,8 @@ git_pull() {
          echo "Could not perform git pull. Will attempt LabStartup with existing code." >> ${logfile}
          break  # just break so labstartup such as it is will run
       fi
-      git checkout $branch
+      git pull # to get updated branches
+      git checkout $branch >> ${logfile} 2>&1
       git pull origin $branch >> ${logfile} 2>&1
       if [ $? = 0 ];then
         break
@@ -208,7 +209,7 @@ index=`echo ${vPod_SKU} | cut -c7-8`
 cloud=`/usr/bin/vmtoolsd --cmd 'info-get guestinfo.ovfEnv' 2>&1`
 holdev=`echo ${cloud} | grep -i hol-dev`
 #if [ "${cloud}" != "No value found" ] && [ !-z "${holdev}" ];then
-if [ "${cloud}" = "No value found" ] || [ !-z "${holdev}" ];then 
+if [ "${cloud}" = "No value found" ] || [ ! -z "${holdev}" ];then 
    branch="dev"
 else
    branch="master"
