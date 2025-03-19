@@ -40,7 +40,7 @@ If ( $psVersion -eq "5" -And $ENV:SystemDrive -eq "C:" ) { $isWindows = $true }
 
 
 If ( $isWindows ) { $labStartupRoot = 'C:\HOL'
-} ElseIf ( $isLinux ) { $labStartupRoot = '/home/holuser/hol'}
+} ElseIf ( $isLinux ) { $labStartupRoot = '/hol'}
 
 $toolsDir = Join-Path -Path $labStartupRoot -ChildPath 'Tools'
 
@@ -51,18 +51,9 @@ If ( $isWindows) {
 	ForEach ( $p in $sav) { $dom = "$dom.$p" }
 	$dom = $dom.substring(1)
 }
-If ( $isLinux ) { 
-	$lcmd = "hostname -A" # 2024: change to hostname -A
-	$fqdn = Invoke-Expression -Command $lcmd
-	$i = $fqdn.IndexOf(".")
-	$hostname = $fqdn.SubString(0,$i)
-	$tl = $fqdn.length -1
-	$dl = $tl - $hostname.length
-	$dom = $fqdn.SubString($i+1,$dl-1)
-}
 
 $adminUser = 'administrator@vsphere.local'
-$configIni = Join-Path -Path "/tmp" -ChildPath "config.ini"
+$configIni = Join-Path -Path $labStartupRoot -ChildPath "config.ini"
 $p = Select-String -Path $configIni -Pattern "^password =" | Out-String
 $p = $p.TrimEnd()
 ($junk, $rootPassword) = $p.Split('= ')
@@ -113,7 +104,7 @@ $vsanHddSize = 40
 $esxSettings = @{
 	'UserVars.DcuiTimeOut' = 0
 	'UserVars.SuppressShellWarning' = 1
-	'Syslog.global.logHost' = "udp://vcsa-01a.${dom}:514"
+	'Syslog.global.logHost' = "udp://vc-mgmt-a.${dom}:514"
 	'Syslog.global.defaultRotate' = 2
 	'UserVars.HostClientCEIPOptIn' = 2
 	'UserVars.SuppressCoredumpWarning' = 1
@@ -137,9 +128,11 @@ if( $site -eq 'q' ) { Return }
 
 if( $site -eq 'b' ) {
 	$adminUser = 'administrator@vsphere2.local'
+	$dom = 'site-b.vcf.lab'
 }
 else {
 	$adminUser = 'administrator@vsphere.local'
+	$dom = 'site-a.vcf.lab'
 }
 
 # Remove-Variable -Name 'r'  # no idea what variable 'r' might have been but it's not here now.
@@ -183,7 +176,7 @@ while( $answer -ne 'y' ) {
 #####################################################################
 
 
-$vCenterServer = "vcsa-01{0}.${dom}" -f $site
+$vCenterServer = "vc-mgmt-{0}.${dom}" -f $site
 
 try {
 	# DEV - remove the Write-Host
@@ -196,7 +189,6 @@ try {
 }
 
 if( $assignLicenses ) {
-	Write-Host "Will assign licenses..."
 	$vCenterLicense = $vCenterLicenses[$site]
 	$esxLicense = $esxLicenses[$site]
 	$LicMgr = Get-View (Get-View $DefaultViServer).Content.LicenseManager
@@ -204,7 +196,6 @@ if( $assignLicenses ) {
 }
 
 if( $gotLicenses ) {
-	Write-Host "Will add the license to vCenter's inventory."
 	#add the licenses to the vCenter's inventory (for the correct Region)
 	$LicMgr.AddLicense($vCenterLicense,$null)
 	$LicMgr.AddLicense($esxLicense,$null)
@@ -214,7 +205,6 @@ if( $gotLicenses ) {
 	$vcUuid = $si.Content.About.InstanceUuid
 	$LicAssignMgrView.UpdateAssignedLicense($vcUuid,$vCenterLicense,$null)
 }
-
 
 #Reconfigure vCenter logging
 $vcLogSettings.Keys | % { Get-AdvancedSetting -Entity $defaultviserver -name $_ | Set-AdvancedSetting -Value $($vcLogSettings[$_]) -Confirm:$false | Out-Null }
@@ -516,7 +506,7 @@ if( $configureVSAN ) {
 Foreach ($hostName in $hostNames) {
 	$h = Get-VMHost -Location $dc -Name $hostName 
 	Write-Host -Fore Green "Enter Maintenance Mode"
-	$h | Set-VMhost -ConnectionState Maintenance
+	$h | Set-VMhost -State Maintenance
 }
 
 Disconnect-VIserver * -Confirm:$false
