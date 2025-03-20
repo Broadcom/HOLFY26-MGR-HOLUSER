@@ -40,7 +40,7 @@ git_clone() {
   git remote add origin $gitproject >> ${logfile}
   echo "Performing git clone for repo ${vpodgit}" >> ${logfile}
   # git clone git@holgitlab.oc.vmware.com:hol-labs/2087-labs/8701.git
-  git clone $gitproject >> ${logfile} 2>&1
+  git clone $gitproject $vpodgitdir >> ${logfile} 2>&1
 }
 
 runlabstartup() {
@@ -123,7 +123,6 @@ else  # normal first run with no labcheck argument
       rm ${holroot}/${router}/gitdone
    fi
 fi
-
 
 # copy the config.ini from the mainconsole to /tmp
 if [ -f ${mcholroot}/config.ini ];then
