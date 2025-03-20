@@ -1,22 +1,24 @@
 #! /bin/sh
-# version 1.3 19-March 2025
+# version 1.33 04-March 2025
 
 git_pull() {
    cd $1
    ctr=0
-   # stash uncommitted changes if not running in dev
-   if [ $prod ];then
-      echo "git stash local changes for prod." >> ${logfile}
-      git stash >> ${logfile}
+   # stash uncommitted changes if not running in HOL-Dev
+   if [ $branch = "master" ];then
+       echo "git stash local changes for prod." >> ${logfile}
+       git stash >> ${logfile}
    else
-      echo "Not doing git stash due to HOL-Dev." >> ${logfile}
-   fi  
+       echo "Not doing git stash due to HOL-Dev." >> ${logfile}
+   fi
    while true;do
       if [ $ctr -gt 30 ];then
          echo "Could not perform git pull. Will attempt LabStartup with existing code." >> ${logfile}
          break  # just break so labstartup such as it is will run
       fi
-      git pull origin master >> ${logfile} 2>&1
+      git pull # to get updated branches
+      git checkout $branch >> ${logfile} 2>&1
+      git pull origin $branch >> ${logfile} 2>&1
       if [ $? = 0 ];then
         break
       else
@@ -69,12 +71,12 @@ gitdrive=/vpodrepo
 lmcholroot=/lmchol/hol
 wmcholroot=/wmchol/hol
 configini=/tmp/config.ini
+creds=/home/holuser/creds.txt
+cloudinfo='NOT REPORTED'
 logfile=/tmp/labstartupsh.log
 sshoptions='StrictHostKeyChecking=accept-new'
 LMC=false
 WMC=false
-[ -d /home/holuser/hol/vpodrouter ] && router='vpodrouter'
-[ -d /home/holuser/hol/holorouter ] && router='holorouter'
 
 # because we're running as an at or cron job, source the environment variables
 . /home/holuser/.bashrc
@@ -85,7 +87,7 @@ if [ -z "$1" ];then
    rm ${configini} > /dev/null 2>&1
 fi
 
-# remove all the at jobs before starting
+# remove all the labcheck at jobs before starting
 for i in `atq | awk '{print $1}'`;do atrm $i;done
 
 # pause until mount is present
@@ -109,6 +111,20 @@ while true;do
    sleep 5
 done
 
+# start the VLP Agent in prod if not already running
+startagent=`ps -ef | grep VLPagent.sh | grep -v grep`
+if [ "${startagent}" = "" ];then
+   cloud=`/usr/bin/vmtoolsd --cmd "info-get guestinfo.ovfenv" 2>&1 | grep vlp_org_name | cut -f3 -d: | cut -f2 -d\\`
+   if [ "${cloud}" = "" ];then
+      echo "Dev environment. Not starting VLP Agent." >> ${logfile}
+      echo "NOT REPORTED" > /tmp/cloudinfo.txt
+   else
+      echo "Prod environment. Starting VLP Agent." >> ${logfile}
+      echo $cloud > /tmp/cloudinfo.txt
+      /home/holuser/hol/Tools/VLPagent.sh &
+   fi
+fi
+
 startupstatus=${mcholroot}/startup_status.txt
 
 # if run with the labcheck argument, only pass on to labstartup.py and exit
@@ -119,13 +135,12 @@ else  # normal first run with no labcheck argument
    echo "Main Console mount is present. Clearing labstartup logs." >> ${logfile}
    > ${holroot}/labstartup.log
    > ${mcholroot}/labstartup.log
-   if [ -f ${holroot}/${router}/gitdone ];then
-      rm ${holroot}/${router}/gitdone
+   if [ -f ${holroot}/holorouter/gitdone ];then
+      rm ${holroot}/holorouter/gitdone
    fi
 fi
 
-
-# copy the config.ini from the mainconsole to /tmp
+# copy the config.ini from the Console to /tmp
 if [ -f ${mcholroot}/config.ini ];then
    echo "Copying ${mcholroot}/config.ini to ${configini}..." >> ${logfile}
    cp ${mcholroot}/config.ini ${configini}
@@ -138,7 +153,7 @@ else
    exit 1
 fi
 
-# did /root/mount.sh complete the volume preparation?
+# did /root/mount.sh complete to volume preparation?
 while [ ! -d ${gitdrive}/lost+found ];do
    echo "Waiting for ${gitdrive}..."
    sleep 5
@@ -151,20 +166,14 @@ while [ ! -d ${gitdrive}/lost+found ];do
    fi
 done
 
-ubuntu=`grep DISTRIB_RELEASE /etc/lsb-release | cut -f2 -d '='`
-
 # the Core Team git pull is done using gitpull.sh at boot up
 # still need to do the vPod git pull
 if [ -f ${configini} ];then
    echo "Getting vPod_SKU from ${configini}" >> ${logfile}
    # get the vPod_SKU from $configini removing Windows carriage return if present
    vPod_SKU=`grep vPod_SKU ${configini} | grep -v \# | cut -f2 -d= | sed 's/\r$//' | xargs`
-   if [ ${ubuntu} = "20.04" ];then
-      # get the password from $config
-      password=`grep 'password =' ${configini} | grep -v \# | cut -f2 -d= | sed 's/\r$//' | xargs`
-   else
-      password=`cat /home/holuser/creds.txt`
-   fi
+   # get the password from $creds
+   password=`cat /home/holuser/creds.txt`
    # get the lab type
    labtype=`grep 'labtype =' ${configini} | grep -v \# | cut -f2 -d= | sed 's/\r$//' | xargs`
    [ "${labtype}" = "" ] && labtype="HOL"
@@ -173,13 +182,7 @@ elif [ -f /tmp/vPod.txt ];then
    echo "Getting vPod_SKU from /tmp/vPod.txt" >> ${logfile}
    vPod_SKU=`grep vPod_SKU /tmp/vPod.txt | cut -f2 -d '=' | sed 's/\r$//' | xargs`
    echo "vPod_SKU is ${vPod_SKU}" >> ${logfile}
-   if [ ${ubuntu} = "20.04" ];then
-      # get the password from $config
-      password=`grep password /tmp/vPod.txt | cut -f2 -d '=' | sed 's/\r$//' | xargs`
-   else
-      password=`cat /home/holuser/creds.txt`
-      [ -d ${lmcholroot} ] && cp /home/holuser/creds.txt /lmchol/home/holuser/creds.txt
-   fi
+   password=`grep password /tmp/vPod.txt | cut -f2 -d '=' | sed 's/\r$//' | xargs`
    labtype=`grep labtype /tmp/vPod.txt | cut -f2 -d '=' | sed 's/\r$//' | xargs`
 fi
 
@@ -190,10 +193,10 @@ echo $vPod_SKU > /tmp/vPod_SKU.txt
 if [ "$vPod_SKU" = "HOL-BADSKU" ];then
    echo "LabStartup not implemented." >> ${logfile}
    # alert the router that the git pull is complete (at least the Core Team git pull)
-   > /home/holuser/hol/${router}/gitdone
-   # create /tmp/${router} with contents on the router
+   > /home/holuser/hol/holorouter/gitdone
+   # create /tmp/holoouter with contents on the router
    if [ "${labtype}" = "HOL" ];then
-      /usr/bin/sshpass -p ${password} scp -o ${sshoptions} -r ${holroot}/${router} holuser@router:/tmp
+      scp -o ${sshoptions} -r ${holroot}/holorouter holuser@router:/tmp >dev/null
    fi
    runlabstartup
    exit 0
@@ -203,31 +206,25 @@ fi
 year=`echo ${vPod_SKU} | cut -c5-6`
 index=`echo ${vPod_SKU} | cut -c7-8`
 
-# calculate the git server
-# DEBUG
-internalgit=10.138.147.254
-externalgit=holgitlab.oc.vmware.com
-status=`ssh -o ConnectTimeout=5 -T git@$internalgit`
-if [ $? != 0 ];then
-   gitserver=$externalgit
+cloud=`/usr/bin/vmtoolsd --cmd 'info-get guestinfo.ovfEnv' 2>&1`
+holdev=`echo ${cloud} | grep -i hol-dev`
+if [ "${cloud}" = "No value found" ] || [ ! -z "${holdev}" ];then 
+   branch="dev"
 else
-   gitserver=$internalgit
+   branch="master"
 fi
-gitproject="git@${gitserver}:hol-labs/20${year}-labs/${year}${index}.git"
+
+gitproject="https:github.com/Broadcom/${year}${index}.git"
 
 # this is the 2nd git pull for lab-specific captain updates
-echo "Ready to pull updates for ${vPod_SKU} from HOL gitlab ${gitproject}." >> ${logfile}
-
-prod=false
-holdev=`vmtoolsd --cmd 'info-get guestinfo.ovfEnv' 2>&1 | grep -i HOL-Dev`
-[ $? = 1 ] && prod=true
+echo "Ready to pull updates for ${vPod_SKU} from public GitHub ${branch} branch." >> ${logfile}
 
 yearrepo="${gitdrive}/20${year}-labs"
 yeargit="${yearrepo}/.git"
 vpodgitdir="${yearrepo}/${year}${index}"
 vpodgit="${vpodgitdir}/.git"
 
-if [ $labtype = "HOL" ] || [ $vPod_SKU = "HOL-2554" ] || [ $vPod_SKU = "HOL-2557" ];then
+if [ $labtype = "HOL" ] || [ $vPod_SKU = "HOL-2554" ];then
 
    # use git clone if local git repo is new else git pull for existing local repo
    if [ ! -e ${yearrepo} ] || [ ! -e ${vpodgitdir} ];then
@@ -264,25 +261,25 @@ fi
 if [ "${labtype}" = "HOL" ];then
    # the router applies when the files arrive
    echo "Pushing default router files..." >> ${logfile}
-   /usr/bin/sshpass -p ${password} scp -o $sshoptions -r ${holroot}/${router} holuser@router:/tmp
+   scp -o $sshoptions -r ${holroot}/holorouter holuser@router:/tmp >/dev/null
 fi
 
 # get the vPod_SKU router files to the hol folder which overwrites the Core Team default files (except allowlist)
-skurouterfiles="${yearrepo}/${year}${index}/${router}"
+skurouterfiles="${yearrepo}/${year}${index}/holorouter"
 if [ -d ${skurouterfiles} ];then 
    if [ "${labtype}" = "HOL" ];then
       echo "Updating router files from ${vPod_SKU}."  >> ${logfile}
       # concatenate the allowlist files
       cp -r ${skurouterfiles} /tmp
-      cat ${holroot}/${router}/allowlist ${skurouterfiles}/allowlist | sort | uniq > /tmp/${router}/allowlist
-      /usr/bin/sshpass -p ${password} scp -o ${sshoptions} -r /tmp/${router} holuser@router:/tmp
+      cat ${holroot}/holorouter/allowlist ${skurouterfiles}/allowlist | sort | uniq > /tmp/holorouter/allowlist
+      scp -o ${sshoptions} -r /tmp/holorouter holuser@router:/tmp >/dev/null
    fi
 elif [ "${labtype}" = "HOL" ];then
    echo "Using default Core Team router files only."  >> ${logfile}
 fi
 # alert the router that the git pull is complete so files are applied
 if [ "${labtype}" = "HOL" ];then
-   /usr/bin/sshpass -p ${password} ssh -o ${sshoptions} holuser@router "> /tmp/${router}/gitdone"
+   ssh -o ${sshoptions} holuser@router '> /tmp/holorouter/gitdone'
 fi
 
 # note that the gitlab pull is complete
@@ -296,4 +293,3 @@ else
    echo "FAIL - No Config" > $startupstatus
    exit 1
 fi 
-
