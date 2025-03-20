@@ -178,6 +178,7 @@ elif [ -f /tmp/vPod.txt ];then
    else
       password=`cat /home/holuser/creds.txt`
       [ -d ${lmcholroot} ] && cp /home/holuser/creds.txt /lmchol/home/holuser/creds.txt
+      [ -d ${lmcholroot} ] && cp /home/holuser/creds.txt /lmchol/home/holuser/Desktop/PASSWORD.txt
    fi
    labtype=`grep labtype /tmp/vPod.txt | cut -f2 -d '=' | sed 's/\r$//' | xargs`
 fi
