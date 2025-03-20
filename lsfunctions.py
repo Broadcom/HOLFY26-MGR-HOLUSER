@@ -146,7 +146,7 @@ def init(**kwargs):
     lfile = kwargs.get('logfile', logfile)
     chkrouter = kwargs.get('router', True)
     start_time = datetime.datetime.now()
-    password = getfilecontents(creds)
+    password = getfilecontents(creds).strip()
     
     if lab_sku == bad_sku:
         labtype = 'HOL'
