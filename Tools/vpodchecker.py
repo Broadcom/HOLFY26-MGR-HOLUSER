@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# version 1.4 27-May 2024
+# version 1.5 25-March 2025
 import sys
 sys.path.append('/hol')
 import os
@@ -78,25 +78,24 @@ def get_ntp_config(esx_host):
             return ntp_data
 
 
-def add_vm_config_extra_option(sic, vm_uuid, option_key, option_value):
+def add_vm_config_extra_option(vm_uuid, option_key, option_value):
     """
-
-    :param sic: session.content
     :param vm_uuid: vm.config.uuid
     :param option_key: the name of the option
     :param option_value: the value for the option
     :return:
     """
-    vm2 = sic.searchIndex.FindByUuid(None, vm_uuid, True)
-    print('setting', option_key, 'to', option_value, 'for', vm2.name)
-    spec = vim.vm.ConfigSpec()
-    opt = vim.option.OptionValue()
-    spec.extraConfig = []
-    opt.key = option_key
-    opt.value = option_value
-    spec.extraConfig.append(opt)
-    task = vm2.ReconfigVM_Task(spec)
-    WaitForTask(task)
+    for si in lsf.sis:
+        vm2 = si.content.searchIndex.FindByUuid(None, vm_uuid, True)
+        print(f'setting {option_key} to {option_value} for {vm2.name}')
+        spec = vim.vm.ConfigSpec()
+        opt = vim.option.OptionValue()
+        spec.extraConfig = []
+        opt.key = option_key
+        opt.value = option_value
+        spec.extraConfig.append(opt)
+        task = vm2.ReconfigVM_Task(spec)
+        WaitForTask(task)
 
 
 def update_vm_resource(resource):
@@ -235,7 +234,7 @@ for vm in vms:
     #print(f'vm: {vm.name} autolock: {autolock}')
     if uuid != 'keep':
         try:
-            add_vm_config_extra_option(content, vm.config.uuid, 'uuid.action', 'keep')
+            add_vm_config_extra_option(vm.config.uuid, 'uuid.action', 'keep')
             if not uuid:
                 uuid = 'was BLANK'
             else:
@@ -247,7 +246,7 @@ for vm in vms:
     if any(re.findall(r'windows', vm.config.guestId, re.IGNORECASE)):
         if autolock != 'FALSE':
             try:
-                add_vm_config_extra_option(content, vm.config.uuid, 'tools.guest.desktop.autolock', 'FALSE')
+                add_vm_config_extra_option(vm.config.uuid, 'tools.guest.desktop.autolock', 'FALSE')
                 if not autolock:
                    autolock = 'was BLANK'
                 else:
@@ -262,13 +261,14 @@ for vm in vms:
                           vm.config.guestId, re.IGNORECASE)):
         if type_delay != '2000000':
             try:
-                add_vm_config_extra_option(content, vm.config.uuid, 'keyboard.typematicMinDelay', '2000000')
+                add_vm_config_extra_option(vm.config.uuid, 'keyboard.typematicMinDelay', '2000000')
                 if not type_delay:
                     type_delay = 'was BLANK'
                 else:
                     type_delay = f'was {type_delay}'
             except Exception as e:
-                print(f'Exception: Attribute error {e}')
+                print(f'{vm.name} Exception: Attribute error {e}')
+                print(f'If {vm.name} is not a managed VM, please run vPodchecker.py again to set keyboard.typmaticMinDelay.')
                 type_delay = 'FIXMANUAL'
     else:
         type_delay = 'NA'
