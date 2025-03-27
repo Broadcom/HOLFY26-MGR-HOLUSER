@@ -1,22 +1,23 @@
 #! /bin/sh
-# version 1.5 26-March 2025
+# version 1.6 27-March 2025
 
 git_pull() {
    cd $1
    ctr=0
-   # stash uncommitted changes if not running in dev
-   if [ $prod ];then
-      echo "git stash local changes for prod." >> ${logfile}
-      git stash >> ${logfile}
+   # stash uncommitted changes if not running in HOL-Dev
+   if [ $branch = "master" ];then
+       echo "git stash local changes for prod." >> ${logfile}
+       git stash >> ${logfile}
    else
-      echo "Not doing git stash due to HOL-Dev." >> ${logfile}
-   fi  
+       echo "Not doing git stash due to HOL-Dev." >> ${logfile}
+   fi
    while true;do
       if [ $ctr -gt 30 ];then
          echo "Could not perform git pull. Will attempt LabStartup with existing code." >> ${logfile}
          break  # just break so labstartup such as it is will run
       fi
-      git pull origin master >> ${logfile} 2>&1
+      git checkout $branch
+      git pull origin $branch >> ${logfile} 2>&1
       if [ $? = 0 ];then
         break
       else
@@ -40,7 +41,7 @@ git_clone() {
   git remote add origin $gitproject >> ${logfile}
   echo "Performing git clone for repo ${vpodgit}" >> ${logfile}
   # git clone git@holgitlab.oc.vmware.com:hol-labs/2087-labs/8701.git
-  git clone $gitproject $vpodgitdir >> ${logfile} 2>&1
+  git clone  -b $branch $gitproject $vpodgitdir >> ${logfile} 2>&1
 }
 
 runlabstartup() {
@@ -216,6 +217,15 @@ fi
 # calculate the git repos based on the vPod_SKU
 year=`echo ${vPod_SKU} | cut -c5-6`
 index=`echo ${vPod_SKU} | cut -c7-8`
+
+cloud=`/usr/bin/vmtoolsd --cmd 'info-get guestinfo.ovfEnv' 2>&1`
+holdev=`echo ${cloud} | grep -i hol-dev`
+#if [ "${cloud}" != "No value found" ] && [ !-z "${holdev}" ];then
+if [ "${cloud}" = "No value found" ] || [ !-z "${holdev}" ];then 
+   branch="dev"
+else
+   branch="master"
+fi
 
 gitproject="https://github.com/Broadcom/HOL-${year}${index}.git"
 
