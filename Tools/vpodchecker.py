@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# version 1.5 25-March 2025
+# version 1.6 27-March 2025
 import sys
 sys.path.append('/hol')
 import os
@@ -187,7 +187,7 @@ for url in urls_to_test:
         ssl_report_table.add_row([host.name, host.port, host.certname, exp_date, host.days_to_expire])
         hosts[host.name] = 1
     else:
-        ssl_report_table.add_row([host.name, host.port, 'could not test', '', '', ''])
+        ssl_report_table.add_row([host.name, host.port, 'could not test', '', ''])
 
 # report on SSL Certificates
 print(f'==== SSL CERTIFICATES with days to expire after lab expiration {min_exp_date} ====')
