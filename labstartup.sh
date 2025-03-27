@@ -220,7 +220,6 @@ index=`echo ${vPod_SKU} | cut -c7-8`
 
 cloud=`/usr/bin/vmtoolsd --cmd 'info-get guestinfo.ovfEnv' 2>&1`
 holdev=`echo ${cloud} | grep -i hol-dev`
-#if [ "${cloud}" != "No value found" ] && [ !-z "${holdev}" ];then
 if [ "${cloud}" = "No value found" ] || [ !-z "${holdev}" ];then 
    branch="dev"
 else
