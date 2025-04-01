@@ -1,4 +1,4 @@
-# lsfunctions.py - version v2.3 - 28-February 2025
+# lsfunctions.py - version v2.4 - 01-April 2025
 # implementing standard naming, removing unneeded legacy code and simplifying where possible
 
 import os
@@ -199,7 +199,8 @@ def init(**kwargs):
             write_output(f'Waiting for proxy on {proxy}...', logfile=lfile)
             labstartup_sleep(sleep_seconds)
 
-        # wait for the router to be ready
+        # wait for the router to be ready - remove date command not needed really
+        """
         lcmd = 'date'
         while True:
             logging.debug(f'Running date commnand on holuser@{router}')
@@ -208,6 +209,7 @@ def init(**kwargs):
                 break
             labstartup_sleep(sleep_seconds)
         write_output("Router appears responsive now.", logfile=lfile)
+        """
   
 
 def test_firewall(url, pattern, timeout):
