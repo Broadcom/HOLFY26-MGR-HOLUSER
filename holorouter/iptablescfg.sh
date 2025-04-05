@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # DEFAULT HOL FIREWALL RULESET
-# version 23-April 2025
+# version 04-April 2025
 
 # clear any existing rules
 iptables --flush
@@ -10,15 +10,16 @@ ip6tables --flush
 # establish holodeck standard rules
 iptables -P INPUT ACCEPT
 iptables -P OUTPUT ACCEPT
-iptables -N FLANNEL-FWD
-iptables -N KUBE-EXTERNAL-SERVICES
-iptables -N KUBE-FIREWALL
-iptables -N KUBE-FORWARD
-iptables -N KUBE-KUBELET-CANARY
-iptables -N KUBE-NODEPORTS
-iptables -N KUBE-PROXY-CANARY
-iptables -N KUBE-PROXY-FIREWALL
-iptables -N KUBE-SERVICES
+# chains already exist no need to try to create again
+#iptables -N FLANNEL-FWD
+#iptables -N KUBE-EXTERNAL-SERVICES
+#iptables -N KUBE-FIREWALL
+#iptables -N KUBE-FORWARD
+#iptables -N KUBE-KUBELET-CANARY
+#iptables -N KUBE-NODEPORTS
+#iptables -N KUBE-PROXY-CANARY
+#iptables -N KUBE-PROXY-FIREWALL
+#iptables -N KUBE-SERVICES
 iptables -A INPUT -m conntrack --ctstate NEW -m comment --comment "kubernetes load balancer firewall" -j KUBE-PROXY-FIREWALL
 iptables -A INPUT -m comment --comment "kubernetes health check service ports" -j KUBE-NODEPORTS
 iptables -A INPUT -m conntrack --ctstate NEW -m comment --comment "kubernetes externally-visible service portals" -j KUBE-EXTERNAL-SERVICES
