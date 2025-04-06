@@ -88,6 +88,7 @@ if lsf.labtype != 'HOL':
 else:
     # check the firewall from the Main Console
     fwok = False
+    ctr = 0
     maxctr = 20
     lsf.write_output("Sleeping 60 seconds for holorouter firewall to come up...")
     lsf.labstartup_sleep(60)
