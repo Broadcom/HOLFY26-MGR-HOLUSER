@@ -1,11 +1,6 @@
 #! /bin/sh
-# # 27-May 2024
+# 06-April 2025
 
-# removing support for pfSense router
-#if `nc -z 10.0.0.1 443`;then
-#	echo "pfSense router detected. Add the dot to the Squid denylist to enably proxy."
-#	exit
-#fi
 
 ubuntu=`grep DISTRIB_RELEASE /etc/lsb-release | cut -f2 -d '='`
 
@@ -20,5 +15,10 @@ else
    password=`cat /home/holuser/creds.txt`
 fi
 
-/usr/bin/sshpass -p $password ssh root@router /root/fwupdate.sh --on
-echo "Please re-enable proxy settings for browser and command line."
+if [ ${ubuntu} = "20.04" ];then
+   /usr/bin/sshpass -p $password ssh root@router /root/fwupdate.sh --on
+else
+   /usr/bin/sshpass -p $password ssh holuser@router sudo /root/fwupdate.sh --on
+fi   
+
+echo "Please disable proxy settings for browser and cli (. ~/noproxy.ch)"

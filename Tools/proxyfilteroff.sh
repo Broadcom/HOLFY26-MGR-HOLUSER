@@ -1,5 +1,5 @@
 #! /bin/sh
-#  19-March 2025
+#  06-April 2025
 
 # updated password retrieval logic
 # removing support for pfSense router
@@ -22,5 +22,9 @@ else
    password=`cat /home/holuser/creds.txt`
 fi
 
-/usr/bin/sshpass -p ${password} ssh root@router /root/proxyfilter.sh --off
+if [ ${ubuntu} = "20.04" ];then
+   /usr/bin/sshpass -p ${password} ssh root@router /root/proxyfilter.sh --off
+else
+   /usr/bin/sshpass -p ${password} ssh holuser@router sudo /root/proxyfilter.sh --off
+fi
 echo "Proxy is still active but will not block temporarily. Applications must use proxy."

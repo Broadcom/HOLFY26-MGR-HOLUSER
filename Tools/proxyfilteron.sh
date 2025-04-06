@@ -1,10 +1,11 @@
 #! /bin/sh
-#  19-March 2025
+#  06-April 2025
 
 # updated password retrieval logic
 # removing support for pfSense router
 #if `nc -z 10.0.0.1 443`;then
-#	echo "pfSense router detected. Add the dot to the Squid denylist to enble proxy."
+#	echo "pfSense router detected. Please remove the dot from the Squid denylist to open proxy."
+#	echo "Open https://10.0.0.1/-->Login:  admin, Password:  VMware1!-->Services-->Squid Proxy Server-->ACLs-->Denylist-->Delete the "dot"-->Save"
 #	exit
 #fi
 
@@ -21,5 +22,9 @@ else
    password=`cat /home/holuser/creds.txt`
 fi
 
-/usr/bin/sshpass -p ${password} ssh root@router /root/proxyfilter.sh --on
-echo "Proxy filtering is enabled. Applications must use proxy."
+if [ ${ubuntu} = "20.04" ];then
+   /usr/bin/sshpass -p ${password} ssh root@router /root/proxyfilter.sh --on
+else
+   /usr/bin/sshpass -p ${password} ssh holuser@router sudo /root/proxyfilter.sh --on
+fi
+echo "Proxy is still active but will not block temporarily. Applications must use proxy."
