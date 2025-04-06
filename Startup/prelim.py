@@ -1,4 +1,4 @@
-# prelim.py version 1.14 21-February 2025
+# prelim.py version 1.15 06-April 2025
 import sys
 import os
 import glob
@@ -82,25 +82,15 @@ if lsf.WMC and lsf.labtype == 'HOL':
             fp.write(f'{resetprompt}\n')
         fp.close()
 
-# verify the router firewall is active
-checkfw = True
 # test an external url to be certain the connection is blocked. The last argument is the timeout.
 if lsf.labtype != 'HOL':
     lsf.write_output(f'NOT checking firewall for labtype {lsf.labtype}')
-    checkfw = False
-
-# check the firewall from the Main Console
-fwok = False
-if lsf.labcheck == False and checkfw == True:
-    lsf.write_output('Checking firewall from the Main Console...')
-    ctr = 0
-    # guessing the Mara DNS instance in VCF labs takes a little time to initialize
-    if lsf.config.has_section('VCF') == True:
-        maxctr = 20
-        lsf.write_output("Sleeping 60 seconds for VCF lab to stabilize...")
-        lsf.labstartup_sleep(60)
-    else:
-        maxctr = 10
+else:
+    # check the firewall from the Main Console
+    fwok = False
+    maxctr = 20
+    lsf.write_output("Sleeping 60 seconds for holorouter firewall to come up...")
+    lsf.labstartup_sleep(60)
     os.system(f'cp {lsf.holroot}/Tools/checkfw.py {lsf.mctemp}')
     output = []
     if lsf.LMC:
@@ -125,7 +115,7 @@ if lsf.labcheck == False and checkfw == True:
                 fwok = True
                 break
         ctr += 1
-        if ctr == 10:
+        if ctr == maxctr:
             lsf.write_output('Firewall is OFF for the Main Console. Failing lab.')
             lsf.labfail('OPEN FIREWALL')        
         lsf.write_output(f'Checking firewall on Main Console. Attempt: {ctr}')
