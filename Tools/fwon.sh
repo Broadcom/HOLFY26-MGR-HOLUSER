@@ -1,5 +1,5 @@
 #! /bin/sh
-# 06-April 2025
+# 07-April 2025
 
 
 ubuntu=`grep DISTRIB_RELEASE /etc/lsb-release | cut -f2 -d '='`
@@ -21,4 +21,4 @@ else
    /usr/bin/sshpass -p $password ssh holuser@router sudo /root/fwupdate.sh --on
 fi   
 
-echo "Please disable proxy settings for browser and cli (. ~/noproxy.ch)"
+echo "Please enable proxy settings for browser and cli (. ~/.bashrc)"
