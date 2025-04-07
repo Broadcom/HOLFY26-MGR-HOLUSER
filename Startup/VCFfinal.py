@@ -1,4 +1,4 @@
-# VCFfinal.py version 1.0 28-February 2025
+# VCFfinal.py version 1.1 07-April 2025
 import datetime
 import os
 import sys
@@ -56,6 +56,14 @@ if 'vcfmgmtcluster' in lsf.config['VCF'].keys():
     lsf.write_vpodprogress('VCF Hosts Connect', 'GOOD-3', color=color)
     lsf.connect_vcenters(vcfmgmtcluster)
 
+vcenters = []
+if 'vCenters' in lsf.config['RESOURCES'].keys():
+    vcenters = lsf.config.get('RESOURCES', 'vCenters').split('\n')
+
+if vcenters:
+    lsf.write_vpodprogress('Connecting vCenters', 'GOOD-3', color=color)
+    lsf.connect_vcenters(vcenters)
+
 lsf.write_vpodprogress('Tanzu Control Plane', 'GOOD-8', color=color)
 supvms = lsf.get_vm_match('Supervisor*')
 for vm in supvms:
@@ -99,21 +107,24 @@ if 'vravms' in lsf.config['VCFFINAL'].keys():
     # before starting verify NICs are set to start connected
     for vravm in vravms:
         (vmname, server) = vravm.split(':')
-        vm = lsf.get_vm(vmname)
-        verify_nic_connected (vm, True) # just make sure connected at start
+        try:
+            vms = lsf.get_vm(vmname)
+            verify_nic_connected (vms[0], True) # just make sure connected at start
+        except Exception as e:
+            lsf.write_output(f'{e}')
     lsf.start_nested(vravms)
     # verify that the wsa L2 VM is actually starting
     # after starting verify NIC is actually connected
     for vravm in vravms:
         (vmname, server) = vravm.split(':')
-        vm = lsf.get_vm(vmname)
-        while vm.runtime.powerState != 'poweredOn':
-            vm.PowerOnVM_Task()
+        vms = lsf.get_vm(vmname)
+        while vms[0].runtime.powerState != 'poweredOn':
+            vms[0].PowerOnVM_Task()
             lsf.labstartup_sleep(lsf.sleep_seconds)
-        while vm.summary.guest.toolsRunningStatus != 'guestToolsRunning':
+        while vms[0].summary.guest.toolsRunningStatus != 'guestToolsRunning':
             lsf.write_output(f'Waiting for Tools in {vmname}...')
             lsf.labstartup_sleep(lsf.sleep_seconds)
-            verify_nic_connected (vm, False) # if not connected, disconnect and reconnect
+            verify_nic_connected (vms[0], False) # if not connected, disconnect and reconnect
     
 ##### Final URL Checking
 vraurls = []
