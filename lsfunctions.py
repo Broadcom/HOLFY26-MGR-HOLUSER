@@ -1,4 +1,4 @@
-# lsfunctions.py - version v2.4 - 01-April 2025
+# lsfunctions.py - version v2.5 - 07-April 2025
 # implementing standard naming, removing unneeded legacy code and simplifying where possible
 
 import os
@@ -925,7 +925,7 @@ def start_nested(records):
         if not vms:
             vms = get_vm_match(e_name)
         if not vms:
-            write_output(f'Unable to find entity {e_name})')
+            write_output(f'Unable to find entity {e_name}')
             continue
         for vm in vms:
             if va:
