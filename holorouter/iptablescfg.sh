@@ -55,6 +55,8 @@ iptables -A KUBE-FORWARD -m conntrack --ctstate INVALID -j DROP
 iptables -A KUBE-FORWARD -m comment --comment "kubernetes forwarding rules" -m mark --mark 0x4000/0x4000 -j ACCEPT
 iptables -A KUBE-FORWARD -m comment --comment "kubernetes forwarding conntrack rule" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 
+iptables -t nat -A POSTROUTING -o eth1 -j MASQUERADE
+iptables -t nat -A POSTROUTING -o eth2 -j MASQUERADE
 
 # EXAMPLE allow SSH: do not use as-is. Too open!
 #iptables -A FORWARD -s 192.168.110.0/24 -p TCP --dport 22 -j ACCEPT
