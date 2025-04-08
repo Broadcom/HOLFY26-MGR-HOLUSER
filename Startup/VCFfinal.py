@@ -107,7 +107,7 @@ if 'vravms' in lsf.config['VCFFINAL'].keys():
     for vravm in vravms:
         (vmname, server) = vravm.split(':')
         try:
-            vms = lsf.get_vm_match(vmname)
+            vms = lsf.get_vm(vmname, vc='vc-mgmt-a.site-a.vcf.lab')
             for vm in vms:
                 verify_nic_connected (vm, True) # just make sure connected at start
         except Exception as e:
