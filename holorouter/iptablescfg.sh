@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # DEFAULT HOL FIREWALL RULESET
-# version 04-April 2025
+# version 08-April 2025
 
 # clear any existing rules
 iptables --flush
@@ -111,15 +111,15 @@ iptables -A FORWARD -p icmp --icmp-type 8 -s 0/0 -d 0/0 -m state --state NEW,EST
 iptables -A FORWARD -p icmp --icmp-type 0 -s 0/0 -d 0/0 -m state --state ESTABLISHED,RELATED -j ACCEPT
 
 # allow IPs inside the vPod, only on private networks TBD
-#iptables -A FORWARD -s 192.168.0.0/16 -d 192.168.0.0/16 -j ACCEPT
-#iptables -A FORWARD -s 192.168.0.0/16 -d 172.16.0.0/12  -j ACCEPT
-#iptables -A FORWARD -s 192.168.0.0/16 -d 10.0.0.0/8     -j ACCEPT
-#iptables -A FORWARD -s 172.16.0.0/12 -d 192.168.0.0/16  -j ACCEPT
-#iptables -A FORWARD -s 172.16.0.0/12 -d 172.16.0.0/12   -j ACCEPT
-#iptables -A FORWARD -s 172.16.0.0/12 -d 10.0.0.0/8      -j ACCEPT
-#iptables -A FORWARD -s 10.0.0.0/8 -d 192.168.0.0/16     -j ACCEPT
-#iptables -A FORWARD -s 10.0.0.0/8 -d 172.16.0.0/12      -j ACCEPT
-#iptables -A FORWARD -s 10.0.0.0/8 -d 10.0.0.0/8         -j ACCEPT
+iptables -A FORWARD -s 192.168.0.0/16 -d 192.168.0.0/16 -j ACCEPT
+iptables -A FORWARD -s 192.168.0.0/16 -d 172.16.0.0/12  -j ACCEPT
+iptables -A FORWARD -s 192.168.0.0/16 -d 10.0.0.0/8     -j ACCEPT
+iptables -A FORWARD -s 172.16.0.0/12 -d 192.168.0.0/16  -j ACCEPT
+iptables -A FORWARD -s 172.16.0.0/12 -d 172.16.0.0/12   -j ACCEPT
+iptables -A FORWARD -s 172.16.0.0/12 -d 10.0.0.0/8      -j ACCEPT
+iptables -A FORWARD -s 10.0.0.0/8 -d 192.168.0.0/16     -j ACCEPT
+iptables -A FORWARD -s 10.0.0.0/8 -d 172.16.0.0/12      -j ACCEPT
+iptables -A FORWARD -s 10.0.0.0/8 -d 10.0.0.0/8         -j ACCEPT
 
 ### LAB-SPECIFIC RULES
 
