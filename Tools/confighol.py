@@ -59,4 +59,5 @@ if esx_hosts:
                 # lsf.test_esx()
                 lsf.scp(local_auth_file, f'root@{host}:{esx_auth_file}', lsf.password)
                 lsf.ssh(f'chmod 600 {esx_auth_file}', f'root@{host}', lsf.password)
+                lsf.update_session_timeout(host, 0)
                 break # go on to the next host
