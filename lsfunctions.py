@@ -1797,3 +1797,13 @@ def enable_ssh_on_esx(host):
                 print(f'Starting {service.key} on {host}...')
                 service_system.Start(service.key)
                 service_system.UpdateServicePolicy(service.key, 'on')
+
+
+# update UserVars.HostClientSessionTimeout
+def update_session_timeout(host, mins):
+    print(f'Setting session timeout to {mins} on {host}...')
+    esx_host = get_host(host)
+    option_manager = esx_host.configManager.advancedOption
+    option = vim.option.OptionValue(key='UserVars.HostClientSessionTimeout', value=mins)
+    if option_manager.UpdateOptions(changedValue=[option]):
+        print(f'UserVars.HostClientSessionTimeout set to {mins} on {host}')
