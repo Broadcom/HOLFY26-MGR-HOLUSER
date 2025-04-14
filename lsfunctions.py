@@ -1787,3 +1787,13 @@ def startup(fname):
         labfail(f'Unknown error from {fname}')
         exit(1)
 
+def enable_ssh_on_esx(host):
+    print(f"Checking {host}...")
+    esx_host = get_host(host)
+    service_system = esx_host.configManager.serviceSystem
+    for service in service_system.serviceInfo.service:
+        if "TSM" in service.key:
+            if not service.running:
+                print(f'Starting {service.key} on {host}...')
+                service_system.Start(service.key)
+                service_system.UpdateServicePolicy(service.key, 'on')
