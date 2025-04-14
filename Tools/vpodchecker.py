@@ -134,7 +134,7 @@ def update_vm_resource(resource):
 lsf.init(router=False)
 
 #DEBUG
-lsf.lab_year = '25'
+#lsf.lab_year = '25'
 
 min_exp_date = datetime.date(int(lsf.lab_year) + 2000, 12, 30)
 min_date = str(min_exp_date.month) + '/' + str(min_exp_date.day) + '/' + str(min_exp_date.year)
