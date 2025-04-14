@@ -32,7 +32,7 @@ for entry in vcenters:
     answer = input(f'Enter "y" if you need to enable shell on {vc_host[0]} (n):')
     if "y" in answer:
         print(f'enabling shell on vc_host[0]...')
-        lsf.run_command(f'/usr/bin/expect vcshell.exp {vc_host[0]}')
+        lsf.run_command(f'/usr/bin/expect vcshell.exp {vc_host[0]} {lsf.password}')
 
     print(f'enabling ssh auth for manager and LMC on {vc_host[0]}')
     lsf.scp(local_auth_file, f'root@{vc_host[0]}:{vc_auth_file}', lsf.password)
@@ -42,6 +42,7 @@ for entry in vcenters:
     lsf.scp('home/holuser/hol/Tools/vcbrowser.sh', f'root@{vc_host[0]}:/tmp/vcbrowser.sh', lsf.password)
     lsf.ssh(f'/usr/bin/bash /tmp/vcbrowser.sh', f'root@{vc_host[0]}', lsf.password)
 
+exit()
 
 if vcenters:
     lsf.connect_vcenters(vcenters)
