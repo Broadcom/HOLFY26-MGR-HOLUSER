@@ -39,9 +39,8 @@ for entry in vcenters:
     lsf.ssh(f'chmod 600 {vc_auth_file}', f'root@{vc_host[0]}', lsf.password)
     print(f'fixing browser support and enabling MOB on {vc_host[0]}')
 #   vcbrowser.sh - this is not working. investigate creating new jar file with Java jar
-    lsf.scp('home/holuser/hol/Tools/vcbrowser.sh', f'root@{vc_host[0]}:/tmp/vcbrowser.sh', lsf.password)
-    lsf.ssh(f'/usr/bin/bash /tmp/vcbrowser.sh', f'root@{vc_host[0]}', lsf.password)
-
+    lsf.run_command(f'home/holuser/hol/Tools/vcbrowser.sh {vc_host[0]}')
+exit()
 
 if vcenters:
     lsf.connect_vcenters(vcenters)
