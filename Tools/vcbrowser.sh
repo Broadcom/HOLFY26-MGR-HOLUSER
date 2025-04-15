@@ -13,7 +13,7 @@
 pw=`cat /home/holuser/creds.txt`
 libjar=/usr/lib/vmware-sso/vmware-sts/web/lib/libvmidentity-sts-server.jar
 vc=$1
-jar=/home/holuser/hol/Tools/vlp-agent/jre/bin/jar
+jar=/home/holuser/hol/vlp-agent/jre/bin/jar
 [ -d /tmp/vcsa ] && rm -rf /tmp/vcsa
 
 mkdir /tmp/vcsa
