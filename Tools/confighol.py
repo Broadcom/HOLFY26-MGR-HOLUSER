@@ -2,6 +2,7 @@
 from pyVim import connect
 from pyVmomi import vim
 import logging
+import xml.etree.ElementTree as et
 import lsfunctions as lsf
 
 # this must be run manually. The VC shell part can only be run once.
@@ -21,6 +22,8 @@ with open(local_auth_file, 'w') as lf:
 
 esx_auth_file = '/etc/ssh/keys-root/authorized_keys'
 vc_auth_file = '/root/.ssh/authorized_keys'
+vpxd = '/etc/vmware-vpx/vpxd.cfg'
+lvpxd = '/tmp/vpxd.cfg'
 
 vcenters = []
 if 'vCenters' in lsf.config['RESOURCES'].keys():
@@ -38,8 +41,21 @@ for entry in vcenters:
     lsf.scp(local_auth_file, f'root@{vc_host[0]}:{vc_auth_file}', lsf.password)
     lsf.ssh(f'chmod 600 {vc_auth_file}', f'root@{vc_host[0]}', lsf.password)
     print(f'fixing browser support and enabling MOB on {vc_host[0]}')
-#   vcbrowser.sh - this is not working. investigate creating new jar file with Java jar
     lsf.run_command(f'home/holuser/hol/Tools/vcbrowser.sh {vc_host[0]}')
+    # enable the MOB
+    # edit /etc/vmware-vpxd/vpxd.cfg
+    #<enableDebugBrowse>true</enableDebugBrowse>
+    # service-control --restart vmware-vpxd
+    lsf.scp(f'root@{vc_host[0]}:{vpxd}', lvpxd, lsf.password)
+    tree = et.parse(lvpxd)
+    root = tree.getroot()
+    parent = root.find('vpxd')
+    mob = et.Element('enableDebugBrowse')
+    mob.text = 'true'
+    parent.append(mob)
+    tree.write(lvpxd)
+    lsf.scp(lvpxd, f'root@{vc_host[0]}:{vpxd}',  lsf.password)
+    lsf.ssh('service-control --restart vmware-vpxd', f'root@{vc_host[0]}', lsf.password)
 
 if vcenters:
     lsf.connect_vcenters(vcenters)
