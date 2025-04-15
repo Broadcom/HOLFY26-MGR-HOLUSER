@@ -40,7 +40,6 @@ for entry in vcenters:
     print(f'fixing browser support and enabling MOB on {vc_host[0]}')
 #   vcbrowser.sh - this is not working. investigate creating new jar file with Java jar
     lsf.run_command(f'home/holuser/hol/Tools/vcbrowser.sh {vc_host[0]}')
-exit()
 
 if vcenters:
     lsf.connect_vcenters(vcenters)
