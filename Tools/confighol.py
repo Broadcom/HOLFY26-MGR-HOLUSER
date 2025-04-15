@@ -1,4 +1,4 @@
-# confighol.py version 1.0 14-April 2025
+# confighol.py version 1.1 15-April 2025
 from pyVim import connect
 from pyVmomi import vim
 import logging
@@ -41,7 +41,7 @@ for entry in vcenters:
     lsf.scp(local_auth_file, f'root@{vc_host[0]}:{vc_auth_file}', lsf.password)
     lsf.ssh(f'chmod 600 {vc_auth_file}', f'root@{vc_host[0]}', lsf.password)
     print(f'fixing browser support and enabling MOB on {vc_host[0]}')
-    lsf.run_command(f'home/holuser/hol/Tools/vcbrowser.sh {vc_host[0]}')
+    lsf.run_command(f'/home/holuser/hol/Tools/vcbrowser.sh {vc_host[0]}')
     # enable the MOB
     # edit /etc/vmware-vpxd/vpxd.cfg
     #<enableDebugBrowse>true</enableDebugBrowse>
