@@ -1,5 +1,6 @@
-# confighol.py version 1.2 16-April 2025
+# confighol.py version 1.3 16-April 2025
 import os
+import glob
 from pyVim import connect
 from pyVmomi import vim
 import logging
@@ -17,6 +18,12 @@ if not os.path.exists('/usr/bin/expect'):
     exit(1)
 else:
     print("The 'expect' utility is present. Continuing...")
+
+# deal with the Firefox SSL certificates
+filepath = glob.glob('/lmchol/home/holuser/snap/firefox/common/.mozilla/firefox/*/SiteSecurityServiceState.bin')
+if os.path.isfile(filepath[0],):
+    print(f'Renaming {filepath[0]} to {filepath[0]}.bak')
+    os.rename(filepath[0], f'{filepath[0]}.bak')
 
 # remove known_hosts LMC and Manager to prevent ssh/scp key issues
 known_hosts = '/home/holuser/.ssh/known_hosts'
