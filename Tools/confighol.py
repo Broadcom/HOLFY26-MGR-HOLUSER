@@ -21,7 +21,7 @@ else:
 
 # deal with the Firefox SSL certificates
 filepath = glob.glob('/lmchol/home/holuser/snap/firefox/common/.mozilla/firefox/*/SiteSecurityServiceState.bin')
-if os.path.isfile(filepath[0],):
+if os.path.isfile(filepath[0]):
     print(f'Renaming {filepath[0]} to {filepath[0]}.bak')
     os.rename(filepath[0], f'{filepath[0]}.bak')
 
