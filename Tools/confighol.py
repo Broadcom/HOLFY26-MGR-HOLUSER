@@ -33,7 +33,7 @@ if os.path.exists(f'/lmchol/{known_hosts}'):
     os.remove(f'/lmchol/{known_hosts}')
 
 # create .ssh/config to accept new ssh keys on LMC and Manager
-sshconfig = "Host *\n\tStrictHostKeyChecking=no=\n"
+sshconfig = "Host *\n\tStrictHostKeyChecking=no\n"
 with open('/home/holuser/.ssh/config', 'w') as c:
     c.write(sshconfig)
 c.close()
