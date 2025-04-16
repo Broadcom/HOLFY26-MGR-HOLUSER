@@ -1,13 +1,8 @@
 #!/bin/sh
-# version 1.1 15-April 2025
+# version 1.2 16-April 2025
 
 # must have the vCenter FQDN
 [ -z "$1" ] && echo "Usage $0 vCenterFQDN" && exit 1
-
-# TODO: enable the mob
-# edit /etc/vmware-vpxd/vpxd.cfg
-#<enableDebugBrowse>true</enableDebugBrowse>
-# service-control --restart vmware-vpxd
 
 # fix the browser warning issue
 pw=`cat /home/holuser/creds.txt`
@@ -36,4 +31,4 @@ $jar cf libvmidentity-sts-server.jar *
 
 /usr/bin/sshpass -p $pw scp /tmp/vcsa/libvmidentity-sts-server.jar root@${vc}:${libjar}
 
-# reboot the vcsa?
+echo "You must reboot ${vc} in order to use the updated websso.js files."
