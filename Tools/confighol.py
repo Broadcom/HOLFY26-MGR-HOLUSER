@@ -1,4 +1,5 @@
-# confighol.py version 1.1 15-April 2025
+# confighol.py version 1.2 16-April 2025
+import os
 from pyVim import connect
 from pyVmomi import vim
 import logging
@@ -10,6 +11,26 @@ import lsfunctions as lsf
 
 # read the /tmp/config.ini
 lsf.init(router=False)
+
+if not os.path.exists('/usr/bin/expect'):
+    print("Please install 'expect' on the Manager.")
+    exit(1)
+else:
+    print("The 'expect' utility is present. Continuing...")
+
+# remove known_hosts LMC and Manager to prevent ssh/scp key issues
+known_hosts = '/home/holuser/.ssh/known_hosts'
+if os.path.exists(known_hosts):
+    os.remove(known_hosts)
+if os.path.exists(f'/lmchol/{known_hosts}'):
+    os.remove(f'/lmchol/{known_hosts}')
+
+# create .ssh/config to accept new ssh keys on LMC and Manager
+sshconfig = "Host *\n\tStrictHostKeyChecking=no=\n"
+with open('/home/holuser/.ssh/config', 'w') as c:
+    c.write(sshconfig)
+c.close()
+os.system('cp /home/holuser/.ssh/config /lmchol/home/holuser/.ssh/config')
 
 # create the authorized_keys file locally
 manager_key = lsf.getfilecontents('/home/holuser/.ssh/id_rsa.pub')
