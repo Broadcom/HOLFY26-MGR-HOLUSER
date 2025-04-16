@@ -1,4 +1,4 @@
-# odyssey.py - version v1.8 - 21-February 2025
+# odyssey.py - version v1.9 - 16-April 2025
 import sys
 import lsfunctions as lsf
 import os
@@ -53,7 +53,7 @@ elif lsf.LMC:
     odyssey_launcher = 'odyssey-launch.sh'
     ody_icon = 'icon-256.png'
     odyssey_dst = f'home/holuser/desktop-hol'
-    lmcuser = f'holuser@console.{lsf.dom}'
+    lmcuser = f'holuser@console'
 
 odyssey_launcher_src = f'https://odyssey.vmware.com/client/{odyssey_app}'
 # print(odyssey_launcher_src)
