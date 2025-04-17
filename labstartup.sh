@@ -139,15 +139,16 @@ else  # normal first run with no labcheck argument
    fi
 fi
 
-# copy the config.ini from the mainconsole to /tmp
-if [ -f ${mcholroot}/config.ini ];then
-   echo "Copying ${mcholroot}/config.ini to ${configini}..." >> ${logfile}
-   cp ${mcholroot}/config.ini ${configini}
-elif [ -f ${mcholroot}/vPod.txt ];then
+# copy the vPod.txt from the mainconsole to /tmp
+if [ -f ${mcholroot}/vPod.txt ];then
    echo "Copying ${mcholroot}/vPod.txt to /tmp/vPod.txt..." >> ${logfile}
-   cp ${mcholroot}/vPod.txt /tmp/vPod.txt	
+   cp ${mcholroot}/vPod.txt /tmp/vPod.txt
+   labtype=`grep labtype /tmp/vPod.txt | cut -f2 -d '=' | sed 's/\r$//' | xargs`
+   if [ "$labtype" != "HOL" ];then
+      cp ${holroot}/holodeck/defaultconfig.ini ${configini}
+   fi
 else
-   echo "No config.ini or vPod.txt on Main Console. Abort." >> ${logfile}
+   echo "No vPod.txt on Main Console. Abort." >> ${logfile}
    echo "FAIL - No vPod_SKU" > $startupstatus
    exit 1
 fi
@@ -173,12 +174,7 @@ if [ -f ${configini} ];then
    echo "Getting vPod_SKU from ${configini}" >> ${logfile}
    # get the vPod_SKU from $configini removing Windows carriage return if present
    vPod_SKU=`grep vPod_SKU ${configini} | grep -v \# | cut -f2 -d= | sed 's/\r$//' | xargs`
-   if [ ${ubuntu} = "20.04" ];then
-      # get the password from $config
-      password=`grep 'password =' ${configini} | grep -v \# | cut -f2 -d= | sed 's/\r$//' | xargs`
-   else
-      password=`cat /home/holuser/creds.txt`
-   fi
+   password=`cat /home/holuser/creds.txt`
    # get the lab type
    labtype=`grep 'labtype =' ${configini} | grep -v \# | cut -f2 -d= | sed 's/\r$//' | xargs`
    [ "${labtype}" = "" ] && labtype="HOL"
@@ -195,10 +191,7 @@ elif [ -f /tmp/vPod.txt ];then
       [ -d ${lmcholroot} ] && cp /home/holuser/creds.txt /lmchol/home/holuser/creds.txt
       [ -d ${lmcholroot} ] && cp /home/holuser/creds.txt /lmchol/home/holuser/Desktop/PASSWORD.txt
    fi
-   labtype=`grep labtype /tmp/vPod.txt | cut -f2 -d '=' | sed 's/\r$//' | xargs`
 fi
-
-echo $vPod_SKU > /tmp/vPod_SKU.txt
 
 # if labstartup has not been implemented, apply the default router rules
 # then run labstartup.py which will update the desktop and exit

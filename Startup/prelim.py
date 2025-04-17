@@ -37,22 +37,22 @@ lsf.write_vpodprogress('PRELIM', 'GOOD-2', color=color)
 #
 ## Begin Core Team code (please do not edit)
 #
-
-# copy the README.txt from the vpodrepo to the MC if byte count is different and newer
-repo_readme = f'{lsf.vpod_repo}/README.txt'
-mc_readme = f'{lsf.mcdesktop}/README.txt'
-try:
-    if os.stat(repo_readme).st_size != os.stat(mc_readme).st_size:
-        readme_tdiff = os.path.getmtime(repo_readme) - os.path.getmtime(mc_readme)
-        if readme_tdiff > 0:
-            lsf.write_output('vPodrepo README is different and newer. Copying to Main Console...')
-            os.system(f'cp -p {repo_readme} {mc_readme}')
-        elif readme_tdiff < 0:
-            lsf.write_output('Changes detected on MC README. Please add to vPodrepo and check in.')
-    else:
-        lsf.write_output('vPodrepo README and MC have no differences. All good.')
-except Exception as e:
-            lsf.write_output(f'Error updating README.txt: {e}')
+if lsf.labtype == "HOL":
+    # copy the README.txt from the vpodrepo to the MC if byte count is different and newer
+    repo_readme = f'{lsf.vpod_repo}/README.txt'
+    mc_readme = f'{lsf.mcdesktop}/README.txt'
+    try:
+        if os.stat(repo_readme).st_size != os.stat(mc_readme).st_size:
+            readme_tdiff = os.path.getmtime(repo_readme) - os.path.getmtime(mc_readme)
+            if readme_tdiff > 0:
+                lsf.write_output('vPodrepo README is different and newer. Copying to Main Console...')
+                os.system(f'cp -p {repo_readme} {mc_readme}')
+            elif readme_tdiff < 0:
+                lsf.write_output('Changes detected on MC README. Please add to vPodrepo and check in.')
+        else:
+            lsf.write_output('vPodrepo README and MC have no differences. All good.')
+    except Exception as e:
+        lsf.write_output(f'Error updating README.txt: {e}')
 
 # prevent the annoying Firefox banner if WMC
 if lsf.WMC and lsf.labtype == 'HOL':
