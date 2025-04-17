@@ -266,7 +266,7 @@ if [ $labtype = "HOL" ] || [ $vPod_SKU = "HOL-2554" ] || [ $vPod_SKU = "HOL-2557
       echo "${vPod_SKU} git operations were successful." >> ${logfile}
    else
       echo "Could not complete ${vPod_SKU} git clone." >> ${logfile}
-   fi
+   fi 
 fi
 
 if [ -f ${vpodgitdir}/config.ini ];then
@@ -278,11 +278,16 @@ if [ "${labtype}" = "HOL" ];then
    # the router applies when the files arrive
    echo "Pushing default router files..." >> ${logfile}
    /usr/bin/sshpass -p ${password} scp -o $sshoptions -r ${holroot}/${router} holuser@router:/tmp
+else
+   echo "Pushing $labtype router files..." >> ${logfile}
+   /usr/bin/sshpass -p ${password} ssh -o $sshoptions holuser@router mkdir /tmp/holorouter
+   /usr/bin/sshpass -p ${password} scp -o $sshoptions ${holroot}/${router}/nofirewall.sh holuser@router:/tmp/holorouter/iptablescfg.sh
+   /usr/bin/sshpass -p ${password} scp -o $sshoptions ${holroot}/${router}/allowall holuser@router:/tmp/holorouter/allowlist
 fi
 
 # get the vPod_SKU router files to the hol folder which overwrites the Core Team default files (except allowlist)
 skurouterfiles="${yearrepo}/${year}${index}/${router}"
-if [ -d ${skurouterfiles} ];then 
+if [ -d ${skurouterfiles} ] && [ "${labtype}" = "HOL" ];then
    if [ "${labtype}" = "HOL" ];then
       echo "Updating router files from ${vPod_SKU}."  >> ${logfile}
       # concatenate the allowlist files
@@ -294,9 +299,7 @@ elif [ "${labtype}" = "HOL" ];then
    echo "Using default Core Team router files only."  >> ${logfile}
 fi
 # alert the router that the git pull is complete so files are applied
-if [ "${labtype}" = "HOL" ];then
-   /usr/bin/sshpass -p ${password} ssh -o ${sshoptions} holuser@router "> /tmp/${router}/gitdone"
-fi
+/usr/bin/sshpass -p ${password} ssh -o ${sshoptions} holuser@router "> /tmp/${router}/gitdone"
 
 # note that the gitlab pull is complete
 > /tmp/gitdone
@@ -309,4 +312,3 @@ else
    echo "FAIL - No Config" > $startupstatus
    exit 1
 fi 
-
