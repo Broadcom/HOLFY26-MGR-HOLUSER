@@ -16,7 +16,7 @@ git_pull() {
          echo "Could not perform git pull. Will attempt LabStartup with existing code." >> ${logfile}
          break  # just break so labstartup such as it is will run
       fi
-      git checkout $branch
+      git checkout $branch >> ${logfile} 2>&1
       git pull origin $branch >> ${logfile} 2>&1
       if [ $? = 0 ];then
         break
@@ -37,11 +37,13 @@ git_pull() {
 
 git_clone() {
   cd $1
+  echo $1
   git init >> ${logfile}
   git remote add origin $gitproject >> ${logfile}
   echo "Performing git clone for repo ${vpodgit}" >> ${logfile}
   # git clone git@holgitlab.oc.vmware.com:hol-labs/2087-labs/8701.git
   git clone  -b $branch $gitproject $vpodgitdir >> ${logfile} 2>&1
+  git checkout $branch >> ${logfile} 2>&1
 }
 
 runlabstartup() {
