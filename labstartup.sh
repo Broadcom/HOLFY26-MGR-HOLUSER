@@ -1,11 +1,11 @@
 #! /bin/sh
-# version 1.7 19-April 2025
+# version 1.8 24-April 2025
 
 git_pull() {
    cd $1
    ctr=0
    # stash uncommitted changes if not running in HOL-Dev
-   if [ $branch = "master" ];then
+   if [ $branch = "msin" ];then
        echo "git stash local changes for prod." >> ${logfile}
        git stash >> ${logfile}
    else
@@ -139,7 +139,7 @@ else  # normal first run with no labcheck argument
    fi
 fi
 
-# copy the vPod.txt from the mainconsole to /tmp
+# copy the vPod.txt from the console to /tmp
 if [ -f ${mcholroot}/vPod.txt ];then
    echo "Copying ${mcholroot}/vPod.txt to /tmp/vPod.txt..." >> ${logfile}
    cp ${mcholroot}/vPod.txt /tmp/vPod.txt
@@ -216,7 +216,7 @@ holdev=`echo ${cloud} | grep -i hol-dev`
 if [ "${cloud}" = "No value found" ] || [ ! -z "${holdev}" ];then 
    branch="dev"
 else
-   branch="master"
+   branch="main"
 fi
 
 gitproject="https://github.com/Broadcom/HOL-${year}${index}.git"
