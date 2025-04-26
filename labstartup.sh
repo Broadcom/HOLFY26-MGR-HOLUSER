@@ -1,5 +1,5 @@
 #! /bin/sh
-# version 1.8 24-April 2025
+# version 1.9 25-April 2025
 
 git_pull() {
    cd $1
@@ -37,13 +37,10 @@ git_pull() {
 
 git_clone() {
   cd $1
-  echo $1
-  git init >> ${logfile}
-  git remote add origin $gitproject >> ${logfile}
   echo "Performing git clone for repo ${vpodgit}" >> ${logfile}
-  # git clone git@holgitlab.oc.vmware.com:hol-labs/2087-labs/8701.git
+  # git clone -b dev https://github.com/Broadcom/HOL-2610.git /vpodrepo/2026-labs/2610
+  echo "git clone  -b $branch $gitproject $vpodgitdir" >> ${logfile}
   git clone  -b $branch $gitproject $vpodgitdir >> ${logfile} 2>&1
-  git checkout $branch >> ${logfile} 2>&1
 }
 
 runlabstartup() {
