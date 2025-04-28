@@ -1,10 +1,28 @@
 #!/usr/bin/sh
-# version 1.1 25-April 2024
+# version 1.2 28-April 2025
+
+if [ ! -f ~holuser/rtrcreds.txt ]; then
+   echo "Enter the password for the holorouter:"
+   read rtrpass
+   echo $rtrpass > ~holuser/rtrcreds.txt
+fi
 
 pwd=`pwd`
-cd ~holuser/autocheck
-echo -n "git pull: "
-git pull
+
+# remove the current folder in order to clone the correct repo
+autocheckdir=~holuser/autocheck
+
+grep 'git@holgitlab.oc.vmware.com:hol-labs/autocheck.git' ${autocheckdir}/.git/config > /dev/null
+fixautocheck=$?
+if [ $fixautocheck = 0 ]; then
+   echo "Pulling AutoCheck from public GitHub..."
+   rm -rf $autocheckdir
+   git clone https://github.com/broadcom/HOLFY26-MGR-AUTOCHECK.git $autocheckdir
+else
+   cd ~holuser/autocheck
+   echo -n "git pull: "
+   git pull
+fi
 
 # need to turn off proxyfiltering to install PSSQLite
 ~holuser/hol/Tools/proxyfilteroff.sh
@@ -24,3 +42,6 @@ pwsh -Command 'Set-PowerCLIConfiguration -DefaultVIServerMode multiple -Confirm:
 
 echo "Starting autocheck..."
 pwsh -File autocheck.ps1 | tee ~holuser/hol/AutoCheck.log
+
+cd $pwd
+
