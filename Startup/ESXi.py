@@ -1,4 +1,4 @@
-# vSphere.py version 1.10 24-April 2025
+# ESXi.py version 1.11 28-April 2025
 import datetime
 import os
 import sys
