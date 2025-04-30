@@ -1,5 +1,5 @@
 #! /bin/sh
-# version 1.9 25-April 2025
+# version 1.10 30-April 2025
 
 git_pull() {
    cd $1
@@ -144,7 +144,8 @@ if [ -f ${mcholroot}/vPod.txt ];then
    cp ${mcholroot}/vPod.txt /tmp/vPod.txt
    labtype=`grep labtype /tmp/vPod.txt | cut -f2 -d '=' | sed 's/\r$//' | xargs`
    if [ "$labtype" != "HOL" ];then
-      cp ${holroot}/holodeck/defaultconfig.ini ${configini}
+      vPod_SKU=`grep vPod_SKU /tmp/vPod.txt | cut -f2 -d '=' | sed 's/\r$//' | xargs`
+      cat ${holroot}/holodeck/defaultconfig.ini | sed s/HOL-BADSKU/${vPod_SKU}/ > ${configini}
    fi
 else
    echo "No vPod.txt on Main Console. Abort." >> ${logfile}
