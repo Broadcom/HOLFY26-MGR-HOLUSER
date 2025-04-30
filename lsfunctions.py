@@ -1,4 +1,4 @@
-# lsfunctions.py - version v2.5 - 07-April 2025
+# lsfunctions.py - version v2.6 - 30-April 2025
 # implementing standard naming, removing unneeded legacy code and simplifying where possible
 
 import os
@@ -148,10 +148,6 @@ def init(**kwargs):
     start_time = datetime.datetime.now()
     password = getfilecontents(creds).strip()
     
-    if lab_sku == bad_sku:
-        labtype = 'HOL'
-        return
-    
     if os.path.isfile(mcversionfile):
         versiontxt = getfilecontents(mcversionfile)
     
@@ -254,7 +250,7 @@ def parse_labsku(sku):
     
     display_line = f'{base}{lab_sku}\n'
 
-    if sku == bad_sku:
+    if sku == bad_sku and labtype == 'HOL':
         write_output(f'BAD SKU: {sku}')        
         write_output(f'LabStartup script on the Manager VM has not been implemented yet.')
         write_output(f'Please ask for assistance if you need it.')
