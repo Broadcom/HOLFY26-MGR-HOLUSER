@@ -46,16 +46,6 @@ configini = f'/tmp/{configname}'
 creds = f'{home}/creds.txt'
 router = 'router.site-a.vcf.lab'
 proxy = 'proxy.site-a.vcf.lab'
-XAUTHORITY = ''
-
-if os.path.isfile(configini):
-    # Read the latest config.ini file to set globals
-    config = ConfigParser()
-    config.read(configini)
-    lab_sku = config.get('VPOD', 'vPod_SKU')
-    lab_year = lab_sku[4:6]
-    lab_num = lab_sku[6:8]
-    vpod_repo = f'/vpodrepo/20{lab_year}-labs/{lab_year}{lab_num}'
 
 # write to both holroot and mcholroot from the Manager
 logfile = 'labstartup.log'
@@ -116,11 +106,28 @@ vlp_urn = ''
 os.umask(0o0002)
 odyssey = False
 
+labtype = ''
+with open('/lmchol/hol/vPod.txt', 'r') as f:
+    for line in f:
+        if 'labtype' in line:
+            (junk, ltype) = line.split('=')
+            labtype = ltype.strip()
+
+with open(creds, 'r') as c:
+    p = c.readline()
+    password = p.strip()
+
+# get the XAUTHORITY
+with open(f'{mc}/tmp/XAUTHORITY', 'r') as x:
+    xauth = x.readline()
+    XAUTHORITY = xauth.strip()
+
 # default proxies entries
 proxies = {
     "http": "http://proxy:3128",
     "https": "http://proxy:3128"
 }
+
 
 def init(**kwargs):
     """
@@ -132,7 +139,6 @@ def init(**kwargs):
     **kwargs: logfile to use
     """
     global start_time
-    global labtype
     global lab_sku
     global password
     global vsphereaccount
@@ -152,10 +158,6 @@ def init(**kwargs):
         versiontxt = getfilecontents(mcversionfile)
     
     # get the config.ini variables
-    if 'labtype' in config['VPOD'].keys():
-        labtype = config.get('VPOD', 'labtype')
-    else:
-        labtype = 'HOL'
     if 'vsphereaccount' in config['VPOD'].keys():
         vsphereaccount = config.get('VPOD', 'vsphereaccount').split('\n')
     else:
@@ -171,10 +173,6 @@ def init(**kwargs):
     if 'odyssey' in config['VPOD'].keys():
         if config.get('VPOD', 'odyssey').casefold() == 'true'.casefold():
             odyssey = True
-    
-    # get the XAUTHORITY
-    if LMC:
-       XAUTHORITY=getfilecontents(f'{mc}/tmp/XAUTHORITY')
     
     # check the router if indicated
     if chkrouter:
@@ -249,6 +247,9 @@ def parse_labsku(sku):
         wmcmatch = base
     
     display_line = f'{base}{lab_sku}\n'
+
+    # get the labtype from /lmchol/hol/vPod.txt
+    
 
     if sku == bad_sku and labtype == 'HOL':
         write_output(f'BAD SKU: {sku}')        
@@ -1803,3 +1804,15 @@ def update_session_timeout(host, mins):
     option = vim.option.OptionValue(key='UserVars.HostClientSessionTimeout', value=mins)
     if option_manager.UpdateOptions(changedValue=[option]):
         print(f'UserVars.HostClientSessionTimeout set to {mins} on {host}')
+
+
+if os.path.isfile(configini):
+    # Read the latest config.ini file to set globals
+    config = ConfigParser()
+    config.read(configini)
+    lab_sku = config.get('VPOD', 'vPod_SKU')
+    lab_year = lab_sku[4:6]
+    lab_num = lab_sku[6:8]
+    vpod_repo = f'/vpodrepo/20{lab_year}-labs/{lab_year}{lab_num}'
+else:
+    parse_labsku(lab_sku)
