@@ -1,5 +1,5 @@
 #!/usr/bin/sh
-# version 1.2 28-April 2025
+# version 1.3 01-May 2025
 
 if [ ! -f ~holuser/rtrcreds.txt ]; then
    echo "Enter the password for the holorouter:"
@@ -7,7 +7,8 @@ if [ ! -f ~holuser/rtrcreds.txt ]; then
    echo $rtrpass > ~holuser/rtrcreds.txt
 fi
 
-pwd=`pwd`
+pwd=$(pwd)
+cd $HOME
 
 # remove the current folder in order to clone the correct repo
 autocheckdir=~holuser/autocheck
@@ -41,6 +42,7 @@ pwsh -Command 'Set-PowerCLIConfiguration -DefaultVIServerMode multiple -Confirm:
 #DefaultServerMode parameter of Set-PowerCLIConfiguration
 
 echo "Starting autocheck..."
+cd $autocheckdir
 pwsh -File autocheck.ps1 | tee ~holuser/hol/AutoCheck.log
 
 cd $pwd
