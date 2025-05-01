@@ -1,11 +1,11 @@
 #! /bin/sh
-# version 1.10 30-April 2025
+# version 1.11 01-May 2025
 
 git_pull() {
    cd $1
    ctr=0
    # stash uncommitted changes if not running in HOL-Dev
-   if [ $branch = "msin" ];then
+   if [ $branch = "main" ];then
        echo "git stash local changes for prod." >> ${logfile}
        git stash >> ${logfile}
    else
@@ -21,7 +21,7 @@ git_pull() {
       if [ $? = 0 ];then
         break
       else
-        gitresult=`grep 'could not be found' ${logfile}`
+        gitresult=$(grep 'could not be found' ${logfile})
         if [ $? = 0 ];then
            echo "The git project ${gitproject} does not exist." >> ${logfile}
            echo "FAIL - No GIT Project" > $startupstatus
@@ -30,7 +30,7 @@ git_pull() {
            echo "Could not complete git pull. Will try again." >> ${logfile}
         fi
      fi
-     ctr=`expr $ctr + 1`
+     ctr=$(expr $ctr + 1)
      sleep 5
    done
 }
@@ -46,7 +46,7 @@ git_clone() {
 runlabstartup() {
    # start the Python labstartup.py script with optional "labcheck" argument
    # we only want one labstartup.py running
-   lsprocs=`ps -ef | grep labstartup.py | grep -v grep`
+   lsprocs=$(ps -ef | grep labstartup.py | grep -v grep)
    if [ "$lsprocs" = "" ];then
       echo "Starting ${holroot}/labstartup.py $1" >> ${logfile}
       # -u unbuffered output
@@ -56,10 +56,10 @@ runlabstartup() {
 
 get_vpod_repo() {
    # get the vPod_SKU from $configini removing Windows carriage return if present
-   vPod_SKU=`grep vPod_SKU ${configini} | grep -v \# | cut -f2 -d= | sed 's/\r$//' | xargs`
+   vPod_SKU=$(grep vPod_SKU ${configini} | grep -v \# | cut -f2 -d= | sed 's/\r$//' | xargs)
    # calculate the git repo based on the vPod_SKU
-   year=`echo ${vPod_SKU} | cut -c5-6`
-   index=`echo ${vPod_SKU} | cut -c7-8`
+   year=$(echo ${vPod_SKU} | cut -c5-6)
+   index=$(echo ${vPod_SKU} | cut -c7-8)
    yearrepo="${gitdrive}/20${year}-labs"
    vpodgitdir="${yearrepo}/${year}${index}"
 }
@@ -75,6 +75,7 @@ LMC=false
 WMC=false
 [ -d /home/holuser/hol/vpodrouter ] && router='vpodrouter'
 [ -d /home/holuser/hol/holorouter ] && router='holorouter'
+password=$(cat /home/holuser/creds.txt)
 
 # because we're running as an at or cron job, source the environment variables
 . /home/holuser/.bashrc
@@ -86,7 +87,7 @@ if [ -z "$1" ];then
 fi
 
 # remove all the at jobs before starting
-for i in `atq | awk '{print $1}'`;do atrm $i;done
+for i in $(atq | awk '{print $1}');do atrm $i;done
 
 # pause until mount is present
 while true;do
@@ -110,9 +111,9 @@ while true;do
 done
 
 # start the VLP Agent in prod if not already running
-startagent=`ps -ef | grep VLPagent.sh | grep -v grep`
+startagent=$(ps -ef | grep VLPagent.sh | grep -v grep)
 if [ "${startagent}" = "" ];then
-   cloud=`/usr/bin/vmtoolsd --cmd "info-get guestinfo.ovfenv" 2>&1 | grep vlp_org_name | cut -f3 -d: | cut -f2 -d\\`
+   cloud=$(/usr/bin/vmtoolsd --cmd "info-get guestinfo.ovfenv" 2>&1 | grep vlp_org_name | cut -f3 -d: | cut -f2 -d\\)
    if [ "${cloud}" = "" ];then
       echo "Dev environment. Not starting VLP Agent." >> ${logfile}
       echo "NOT REPORTED" > /tmp/cloudinfo.txt
@@ -142,9 +143,10 @@ fi
 if [ -f ${mcholroot}/vPod.txt ];then
    echo "Copying ${mcholroot}/vPod.txt to /tmp/vPod.txt..." >> ${logfile}
    cp ${mcholroot}/vPod.txt /tmp/vPod.txt
-   labtype=`grep labtype /tmp/vPod.txt | cut -f2 -d '=' | sed 's/\r$//' | xargs`
+   labtype=$(grep labtype /tmp/vPod.txt | cut -f2 -d '=' | sed 's/\r$//' | xargs)
    if [ "$labtype" != "HOL" ];then
-      vPod_SKU=`grep vPod_SKU /tmp/vPod.txt | cut -f2 -d '=' | sed 's/\r$//' | xargs`
+      # TODO: cp ${holroot}/holodeck/${vPod_SKU}.ini ${configini}
+      vPod_SKU=$(grep vPod_SKU /tmp/vPod.txt | cut -f2 -d '=' | sed 's/\r$//' | xargs)
       cat ${holroot}/holodeck/defaultconfig.ini | sed s/HOL-BADSKU/${vPod_SKU}/ > ${configini}
    fi
 else
@@ -157,7 +159,7 @@ fi
 while [ ! -d ${gitdrive}/lost+found ];do
    echo "Waiting for ${gitdrive}..."
    sleep 5
-   gitmount=`mount | grep ${gitdrive}`
+   gitmount=$(mount | grep ${gitdrive})
    if [ "${gitmount}" = "" ];then
       echo "" >> ${logfile}
       echo "External ${gitmount} not found. Abort." >> ${logfile}
@@ -166,28 +168,26 @@ while [ ! -d ${gitdrive}/lost+found ];do
    fi
 done
 
-ubuntu=`grep DISTRIB_RELEASE /etc/lsb-release | cut -f2 -d '='`
+ubuntu=$(grep DISTRIB_RELEASE /etc/lsb-release | cut -f2 -d '=')
 
 # the Core Team git pull is done using gitpull.sh at boot up
 # still need to do the vPod git pull
 if [ -f ${configini} ];then
    echo "Getting vPod_SKU from ${configini}" >> ${logfile}
    # get the vPod_SKU from $configini removing Windows carriage return if present
-   vPod_SKU=`grep vPod_SKU ${configini} | grep -v \# | cut -f2 -d= | sed 's/\r$//' | xargs`
-   password=`cat /home/holuser/creds.txt`
+   vPod_SKU=$(grep vPod_SKU ${configini} | grep -v \# | cut -f2 -d= | sed 's/\r$//' | xargs)
    # get the lab type
-   labtype=`grep 'labtype =' ${configini} | grep -v \# | cut -f2 -d= | sed 's/\r$//' | xargs`
+   labtype=$(grep 'labtype =' ${configini} | grep -v \# | cut -f2 -d= | sed 's/\r$//' | xargs)
    [ "${labtype}" = "" ] && labtype="HOL"
    echo "labtype: $labtype" >> ${logfile}
 elif [ -f /tmp/vPod.txt ];then
    echo "Getting vPod_SKU from /tmp/vPod.txt" >> ${logfile}
-   vPod_SKU=`grep vPod_SKU /tmp/vPod.txt | cut -f2 -d '=' | sed 's/\r$//' | xargs`
+   vPod_SKU=$(grep vPod_SKU /tmp/vPod.txt | cut -f2 -d '=' | sed 's/\r$//' | xargs)
    echo "vPod_SKU is ${vPod_SKU}" >> ${logfile}
    if [ ${ubuntu} = "20.04" ];then
       # get the password from $config
-      password=`grep password /tmp/vPod.txt | cut -f2 -d '=' | sed 's/\r$//' | xargs`
+      password=$(grep password /tmp/vPod.txt | cut -f2 -d '=' | sed 's/\r$//' | xargs)
    else
-      password=`cat /home/holuser/creds.txt`
       [ -d ${lmcholroot} ] && cp /home/holuser/creds.txt /lmchol/home/holuser/creds.txt
       [ -d ${lmcholroot} ] && cp /home/holuser/creds.txt /lmchol/home/holuser/Desktop/PASSWORD.txt
    fi
@@ -208,11 +208,11 @@ if [ "$vPod_SKU" = "HOL-BADSKU" ];then
 fi
 
 # calculate the git repos based on the vPod_SKU
-year=`echo ${vPod_SKU} | cut -c5-6`
-index=`echo ${vPod_SKU} | cut -c7-8`
+year=$(echo ${vPod_SKU} | cut -c5-6)
+index=$(echo ${vPod_SKU} | cut -c7-8)
 
-cloud=`/usr/bin/vmtoolsd --cmd 'info-get guestinfo.ovfEnv' 2>&1`
-holdev=`echo ${cloud} | grep -i hol-dev`
+cloud=$(/usr/bin/vmtoolsd --cmd 'info-get guestinfo.ovfEnv' 2>&1)
+holdev=$(echo ${cloud} | grep -i hol-dev)
 if [ "${cloud}" = "No value found" ] || [ ! -z "${holdev}" ];then 
    branch="dev"
 else
@@ -225,7 +225,7 @@ gitproject="https://github.com/Broadcom/HOL-${year}${index}.git"
 echo "Ready to pull updates for ${vPod_SKU} from HOL gitlab ${gitproject}." >> ${logfile}
 
 prod=false
-holdev=`vmtoolsd --cmd 'info-get guestinfo.ovfEnv' 2>&1 | grep -i HOL-Dev`
+holdev=$(vmtoolsd --cmd 'info-get guestinfo.ovfEnv' 2>&1 | grep -i HOL-Dev)
 [ $? = 1 ] && prod=true
 
 yearrepo="${gitdrive}/20${year}-labs"
