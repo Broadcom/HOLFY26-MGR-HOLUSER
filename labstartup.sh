@@ -55,8 +55,6 @@ runlabstartup() {
 }
 
 get_vpod_repo() {
-   # get the vPod_SKU from $configini removing Windows carriage return if present
-   vPod_SKU=$(grep vPod_SKU ${configini} | grep -v \# | cut -f2 -d= | sed 's/\r$//' | xargs)
    # calculate the git repo based on the vPod_SKU
    year=$(echo ${vPod_SKU} | cut -c5-6)
    index=$(echo ${vPod_SKU} | cut -c7-8)
@@ -110,20 +108,6 @@ while true;do
    sleep 5
 done
 
-# start the VLP Agent in prod if not already running
-startagent=$(ps -ef | grep VLPagent.sh | grep -v grep)
-if [ "${startagent}" = "" ];then
-   cloud=$(/usr/bin/vmtoolsd --cmd "info-get guestinfo.ovfenv" 2>&1 | grep vlp_org_name | cut -f3 -d: | cut -f2 -d\\)
-   if [ "${cloud}" = "" ];then
-      echo "Dev environment. Not starting VLP Agent." >> ${logfile}
-      echo "NOT REPORTED" > /tmp/cloudinfo.txt
-   else
-      echo "Prod environment. Starting VLP Agent." >> ${logfile}
-      echo $cloud > /tmp/cloudinfo.txt
-      /home/holuser/hol/Tools/VLPagent.sh &
-   fi
-fi
-
 startupstatus=${mcholroot}/startup_status.txt
 
 # if run with the labcheck argument, only pass on to labstartup.py and exit
@@ -160,6 +144,25 @@ else
    exit 1
 fi
 
+# get the vPod_SKU from $configini removing Windows carriage return if present
+vPod_SKU=$(grep vPod_SKU /tmp/vPod.txt | grep -v \# | cut -f2 -d= | sed 's/\r$//' | xargs)
+# this is needed for the VLPagent.sh script and for AutoCheck
+echo $vPod_SKU > /tmp/vPod_SKU.txt
+
+# start the VLP Agent in prod if not already running
+startagent=$(ps -ef | grep VLPagent.sh | grep -v grep)
+if [ "${startagent}" = "" ];then
+   cloud=$(/usr/bin/vmtoolsd --cmd "info-get guestinfo.ovfenv" 2>&1 | grep vlp_org_name | cut -f3 -d: | cut -f2 -d\\)
+   if [ "${cloud}" = "" ];then
+      echo "Dev environment. Not starting VLP Agent." >> ${logfile}
+      echo "NOT REPORTED" > /tmp/cloudinfo.txt
+   else
+      echo "Prod environment. Starting VLP Agent." >> ${logfile}
+      echo $cloud > /tmp/cloudinfo.txt
+      /home/holuser/hol/Tools/VLPagent.sh &
+   fi
+fi
+
 # did /root/mount.sh complete the volume preparation?
 while [ ! -d ${gitdrive}/lost+found ];do
    echo "Waiting for ${gitdrive}..."
@@ -192,6 +195,8 @@ elif [ -f /tmp/vPod.txt ];then
       [ -d ${lmcholroot} ] && cp /home/holuser/creds.txt /lmchol/home/holuser/Desktop/PASSWORD.txt
    fi
 fi
+
+echo $vPod_SKU >  /tmp/vPod_SKU.txt
 
 # if labstartup has not been implemented, apply the default router rules
 # then run labstartup.py which will update the desktop and exit
