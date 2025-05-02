@@ -1,5 +1,5 @@
 #! /bin/sh
-# version 1.11 01-May 2025
+# version 1.12 02-May 2025
 
 git_pull() {
    cd $1
@@ -145,9 +145,14 @@ if [ -f ${mcholroot}/vPod.txt ];then
    cp ${mcholroot}/vPod.txt /tmp/vPod.txt
    labtype=$(grep labtype /tmp/vPod.txt | cut -f2 -d '=' | sed 's/\r$//' | xargs)
    if [ "$labtype" != "HOL" ];then
-      # TODO: cp ${holroot}/holodeck/${vPod_SKU}.ini ${configini}
       vPod_SKU=$(grep vPod_SKU /tmp/vPod.txt | cut -f2 -d '=' | sed 's/\r$//' | xargs)
-      cat ${holroot}/holodeck/defaultconfig.ini | sed s/HOL-BADSKU/${vPod_SKU}/ > ${configini}
+      if [ -f "${holroot}/holodeck/${vPod_SKU}.ini" ];then
+         echo "Copying ${holroot}/holodeck/${vPod_SKU}.ini to ${configini}" >> ${logfile}
+         cp ${holroot}/holodeck/${vPod_SKU}.ini ${configini}
+      else
+         echo "Copying updated ${holroot}/holodeck/defaultconfig.ini to ${configini}" >> ${logfile}       
+         cat ${holroot}/holodeck/defaultconfig.ini | sed s/HOL-BADSKU/${vPod_SKU}/ > ${configini}
+      fi
    fi
 else
    echo "No vPod.txt on Main Console. Abort." >> ${logfile}
@@ -173,11 +178,6 @@ ubuntu=$(grep DISTRIB_RELEASE /etc/lsb-release | cut -f2 -d '=')
 # the Core Team git pull is done using gitpull.sh at boot up
 # still need to do the vPod git pull
 if [ -f ${configini} ];then
-   echo "Getting vPod_SKU from ${configini}" >> ${logfile}
-   # get the vPod_SKU from $configini removing Windows carriage return if present
-   vPod_SKU=$(grep vPod_SKU ${configini} | grep -v \# | cut -f2 -d= | sed 's/\r$//' | xargs)
-   # get the lab type
-   labtype=$(grep 'labtype =' ${configini} | grep -v \# | cut -f2 -d= | sed 's/\r$//' | xargs)
    [ "${labtype}" = "" ] && labtype="HOL"
    echo "labtype: $labtype" >> ${logfile}
 elif [ -f /tmp/vPod.txt ];then
@@ -222,7 +222,7 @@ fi
 gitproject="https://github.com/Broadcom/HOL-${year}${index}.git"
 
 # this is the 2nd git pull for lab-specific captain updates
-echo "Ready to pull updates for ${vPod_SKU} from HOL gitlab ${gitproject}." >> ${logfile}
+[ $labtype = "HOL" ] && echo "Ready to pull updates for ${vPod_SKU} from HOL gitlab ${gitproject}." >> ${logfile}
 
 prod=false
 holdev=$(vmtoolsd --cmd 'info-get guestinfo.ovfEnv' 2>&1 | grep -i HOL-Dev)
@@ -233,8 +233,7 @@ yeargit="${yearrepo}/.git"
 vpodgitdir="${yearrepo}/${year}${index}"
 vpodgit="${vpodgitdir}/.git"
 
-if [ $labtype = "HOL" ] || [ $vPod_SKU = "HOL-2554" ] || [ $vPod_SKU = "HOL-2557" ];then
-
+if [ $labtype = "HOL" ];then
    # use git clone if local git repo is new else git pull for existing local repo
    if [ ! -e ${yearrepo} ] || [ ! -e ${vpodgitdir} ];then
       echo "Creating new git repo for ${vPod_SKU}..." >> ${logfile}
