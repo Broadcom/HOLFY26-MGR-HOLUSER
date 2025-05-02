@@ -1,4 +1,4 @@
-# VCFfinal.py version 1.2 08-April 2025
+# VCFfinal.py version 1.3 02-May 2025
 import datetime
 import os
 import sys
@@ -107,7 +107,7 @@ if 'vravms' in lsf.config['VCFFINAL'].keys():
     for vravm in vravms:
         (vmname, server) = vravm.split(':')
         try:
-            vms = lsf.get_vm(vmname, vc='vc-mgmt-a.site-a.vcf.lab')
+            vms = lsf.get_vm_match(vmname)
             for vm in vms:
                 verify_nic_connected (vm, True) # just make sure connected at start
         except Exception as e:
