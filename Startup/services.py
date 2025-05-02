@@ -1,4 +1,4 @@
-# services.py - version v1.9 - 22-May 2024
+# services.py - version v1.10 - 02-May 2025
 import sys
 import logging
 import datetime
@@ -32,13 +32,11 @@ if winentries:
     action = 'start'
     lsf.write_vpodprogress('Manage Windows Services', 'GOOD-6', color=color)
     for entry in winentries:
-        (host, service, p, ws) = entry.split(':')
-        if not p:
-            p = lsf.password
+        (host, service, ws) = entry.split(':')
         if not ws:
             ws = 5
         while True:
-            result = lsf.managewindowsservice(action, host, service, waitsec=int(ws), pw=p)
+            result = lsf.managewindowsservice(action, host, service, waitsec=int(ws), pw=lsf.password)
             if result == 'success':
                 lsf.write_output(result)
             else:
@@ -56,15 +54,13 @@ if linentries:
     action = 'start'
     lsf.write_vpodprogress('Manage Linux Services', 'GOOD-6', color=color)
     for entry in linentries:
-        (host, service, p, ws) = entry.split(':')
-        if not p:
-            p = lsf.password
+        (host, service, ws) = entry.split(':')
         if not ws:
             ws = 5
         while True:
             lsf.write_output(f'Performing {action} {service} on {host}')
             try:
-                res = lsf.managelinuxservice(action, host, service, waitsec=int(ws), pw=p)
+                res = lsf.managelinuxservice(action, host, service, waitsec=int(ws), pw=lsf.password)
                 if len(res.stdout):
                     lresult = res.stdout.lower()
                     if 'running' in lresult or 'started' in lresult:
