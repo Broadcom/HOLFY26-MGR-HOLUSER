@@ -1,12 +1,12 @@
 #!/bin/sh
-# version 1.7 - 03-December 2024
+# version 1.8 - 02-May 2025
 
 get_vpod_repo() {
    # labstartup.sh creates the vPod_SKU.txt file
-   vPod_SKU=`cat /tmp/vPod_SKU.txt`
+   vPod_SKU=$(cat /tmp/vPod_SKU.txt)
    # calculate the git repo based on the vPod_SKU
-   year=`echo ${vPod_SKU} | cut -c5-6`
-   index=`echo ${vPod_SKU} | cut -c7-8`
+   year=$(echo ${vPod_SKU} | cut -c5-6)
+   index=$(echo ${vPod_SKU} | cut -c7-8)
    yearrepo="${gitdrive}/20${year}-labs"
    vpodgitdir="${yearrepo}/${year}${index}"
 }
@@ -16,8 +16,6 @@ get_vpod_repo() {
 . /home/holuser/noproxy.sh
 
 logfile='/tmp/VLPagentsh.log'
-# delete this one if present
-egwagent='/home/holuser/hol/Tools/egw-agent-1.0.0.jar'
 # install this version
 vlpagentversion='1.0.6'
 
@@ -28,15 +26,8 @@ labstart=/tmp/labstart.txt
 labstartscript=labstart.sh
 vlpagentdir=/home/holuser/hol/vlp-agent
 
-# cleanup some leftover dev files
-[ -f /home/holuser/egwagent/labactive.sh ] && rm /home/holuser/egwagent/labactive.sh
-[ -f /home/holuser/egwagent/empty.sh ] && rm /home/holuser/egwagent/empty.sh
-[ -f /home/holuser/egwagent/test_create_file.sh ] && rm /home/holuser/egwagent/test_create_file.sh
-
-[ -f ${egwagent} ] && rm ${egwagent}
-
 # clean up old vlp-agent jar files if present
-jars=`ls ${vlpagentdir}/vlp-agent-*.jar`
+jars=$(ls ${vlpagentdir}/vlp-agent-*.jar)
 for file in $jars;do
    [ $file != ${vlpagentdir}/vlp-agent-${vlpagentversion}.jar ] && rm $file
 done
@@ -49,7 +40,7 @@ Tools/vlp-vm-agent-cli.sh install --platform linux-x64 --version ${vlpagentversi
 pkill -f -9 "java -jar vlp-agent-${vlpagentversion}.jar" >> ${logfile} 2>&1
 
 # start the VLP Agent if not running
-lsprocs=`ps -ef | grep jar | grep -v grep`
+lsprocs=$(ps -ef | grep jar | grep -v grep)
 if [ "$lsprocs" = "" ];then
    echo "Sleeping 15 seconds before starting VLP Agent..." >> ${logfile}
    sleep 15
@@ -72,14 +63,14 @@ while true;do
       fi
    elif [ -f ${labstart} ];then
       # if labcheck is running - kill it.
-	  pid=`ps -ef | grep labstartup.py | grep -v grep | awk '{print $2}'`
+	  pid=$(ps -ef | grep labstartup.py | grep -v grep | awk '{print $2}')
       if [ ! -z "${pid}" ];then
 	     echo "Stopping current LabStartup processes..." >> ${logfile}
          pkill -P ${pid}
          kill ${pid}
       fi
       # active lab so delete the scheduled labcheck
-      for i in `atq | awk '{print $1}'`;do atrm $i;done
+      for i in $(atq | awk '{print $1}');do atrm $i;done
       
       # note that this will run everytime the console opens
       echo "Received lab start notification. Running ${vpodgitdir}/${labstartscript}" >> ${logfile}
