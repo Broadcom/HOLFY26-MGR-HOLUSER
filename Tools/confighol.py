@@ -1,4 +1,4 @@
-# confighol.py version 1.3 16-April 2025
+# confighol.py version 1.4 05-May 2025
 import os
 import glob
 from pyVim import connect
@@ -84,6 +84,8 @@ for entry in vcenters:
     tree.write(lvpxd)
     lsf.scp(lvpxd, f'root@{vc_host[0]}:{vpxd}',  lsf.password)
     lsf.ssh('service-control --restart vmware-vpxd', f'root@{vc_host[0]}', lsf.password)
+    print(f'Setting non-expiring password for root on {vc_host[0]}')
+    lsf.ssh('chage -M -1 root', f'root@{vc_host[0]}', lsf.password)
 
 if vcenters:
     lsf.connect_vcenters(vcenters)
