@@ -1,4 +1,4 @@
-# confighol.py version 1.4 05-May 2025
+# confighol.py version 1.5 06-May 2025
 import os
 import glob
 from pyVim import connect
@@ -60,36 +60,48 @@ if 'vCenters' in lsf.config['RESOURCES'].keys():
 for entry in vcenters:
     vc_host = entry.split(':')
     vcshell = False
-    answer = input(f'Enter "y" if you need to enable shell on {vc_host[0]} (n):')
+    answer = input(f'Enter "y" if you need to enable shell, MOB and browser support warning on {vc_host[0]} (n):')
     if "y" in answer:
         print(f'enabling shell on {vc_host[0]}...')
         lsf.run_command(f'/usr/bin/expect vcshell.exp {vc_host[0]} {lsf.password}')
 
-    print(f'enabling ssh auth for manager and LMC on {vc_host[0]}')
-    lsf.scp(local_auth_file, f'root@{vc_host[0]}:{vc_auth_file}', lsf.password)
-    lsf.ssh(f'chmod 600 {vc_auth_file}', f'root@{vc_host[0]}', lsf.password)
-    print(f'fixing browser support and enabling MOB on {vc_host[0]}')
-    lsf.run_command(f'/home/holuser/hol/Tools/vcbrowser.sh {vc_host[0]}')
-    # enable the MOB
-    # edit /etc/vmware-vpxd/vpxd.cfg
-    #<enableDebugBrowse>true</enableDebugBrowse>
-    # service-control --restart vmware-vpxd
-    lsf.scp(f'root@{vc_host[0]}:{vpxd}', lvpxd, lsf.password)
-    tree = et.parse(lvpxd)
-    root = tree.getroot()
-    parent = root.find('vpxd')
-    mob = et.Element('enableDebugBrowse')
-    mob.text = 'true'
-    parent.append(mob)
-    tree.write(lvpxd)
-    lsf.scp(lvpxd, f'root@{vc_host[0]}:{vpxd}',  lsf.password)
-    lsf.ssh('service-control --restart vmware-vpxd', f'root@{vc_host[0]}', lsf.password)
+        print(f'enabling ssh auth for manager and LMC on {vc_host[0]}')
+        lsf.scp(local_auth_file, f'root@{vc_host[0]}:{vc_auth_file}', lsf.password)
+        lsf.ssh(f'chmod 600 {vc_auth_file}', f'root@{vc_host[0]}', lsf.password)
+
+        print(f'fixing browser support and enabling MOB on {vc_host[0]}')
+        lsf.run_command(f'/home/holuser/hol/Tools/vcbrowser.sh {vc_host[0]}')
+        # enable the MOB
+        # edit /etc/vmware-vpxd/vpxd.cfg
+        #<enableDebugBrowse>true</enableDebugBrowse>
+        # service-control --restart vmware-vpxd
+        lsf.scp(f'root@{vc_host[0]}:{vpxd}', lvpxd, lsf.password)
+        tree = et.parse(lvpxd)
+        root = tree.getroot()
+        parent = root.find('vpxd')
+        mob = et.Element('enableDebugBrowse')
+        mob.text = 'true'
+        parent.append(mob)
+        tree.write(lvpxd)
+        lsf.scp(lvpxd, f'root@{vc_host[0]}:{vpxd}',  lsf.password)
+        lsf.ssh('service-control --restart vmware-vpxd', f'root@{vc_host[0]}', lsf.password)
+
     print(f'Setting non-expiring password for root on {vc_host[0]}')
     lsf.ssh('chage -M -1 root', f'root@{vc_host[0]}', lsf.password)
 
 if vcenters:
     lsf.connect_vcenters(vcenters)
 
+# Set DRS to Partially Automated for all clusters
+# Configure HA Admission Controls for all clusters
+clusters = lsf.get_all_clusters()
+for cluster in clusters:
+    print(f'Configuring DRS to be partially automated on {cluster.name}...')
+    cluster.configuration.drsConfig.defaultVmBehavior = "partiallyAutomated"
+    print(f'Disabling admission control on {cluster.name}...')
+    cluster.dasConfig.admissionControlEnabled = false
+
+exit()
 esx_hosts = []
 if 'ESXiHosts' in lsf.config['RESOURCES'].keys():
     esx_hosts = lsf.config.get('RESOURCES', 'ESXiHosts').split('\n')
@@ -104,4 +116,22 @@ if esx_hosts:
                 lsf.scp(local_auth_file, f'root@{host}:{esx_auth_file}', lsf.password)
                 lsf.ssh(f'chmod 600 {esx_auth_file}', f'root@{host}', lsf.password)
                 lsf.update_session_timeout(host, 0)
+                print(f'Setting non-expiring password for root on {host}')
+                lsf.ssh('chage -M 9999 root', f'root@{host}', lsf.password)
                 break # go on to the next host
+
+# NSX stuff
+# add authorized_keys to all NSX Managers
+# Remove password expiry for admin, root and audit on all NSX Managers (nsx-mgmt-01a)
+# clear user admin password-expiration
+# clear user root password-expiration
+# clear user audit password-expiration
+
+# Set SSH key on all NSX Edges (edge-wld01-01a)
+# Remove password expiry for admin, root and audit on all NSX Edges
+
+# Remove password expiry for admin, root and backup on sddcmanager-a
+
+# arp cache stuff in console, router, all vCenters and manager
+# ip -s -s neigh flush all 
+
