@@ -94,14 +94,15 @@ if vcenters:
 
 # Set DRS to Partially Automated for all clusters
 # Configure HA Admission Controls for all clusters
+"""
 clusters = lsf.get_all_clusters()
 for cluster in clusters:
     print(f'Configuring DRS to be partially automated on {cluster.name}...')
     cluster.configuration.drsConfig.defaultVmBehavior = "partiallyAutomated"
     print(f'Disabling admission control on {cluster.name}...')
     cluster.dasConfig.admissionControlEnabled = false
+"""
 
-exit()
 esx_hosts = []
 if 'ESXiHosts' in lsf.config['RESOURCES'].keys():
     esx_hosts = lsf.config.get('RESOURCES', 'ESXiHosts').split('\n')
