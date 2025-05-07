@@ -1,4 +1,4 @@
-# confighol.py version 1.7 07-May 2025
+# confighol.py version 1.8 07-May 2025
 import os
 import glob
 from pyVim import connect
@@ -78,7 +78,7 @@ for entry in vcenters:
     answer = input(f'Enter "y" if you need to enable shell and browser support warning on {vc_host} (n):')
     if "y" in answer:
         print(f'enabling shell on {vc_host}...')
-        lsf.run_command(f'/usr/bin/expect vcshell.exp {vc_hos} {lsf.password}')
+        lsf.run_command(f'/usr/bin/expect ~/hol/Tools/vcshell.exp {vc_hos} {lsf.password}')
 
         print(f'enabling ssh auth for manager and LMC on {vc_host}')
         lsf.scp(local_auth_file, f'root@{vc_host}:{auth_file}', lsf.password)
@@ -86,6 +86,7 @@ for entry in vcenters:
 
         print(f'fixing browser support and enabling MOB on {vc_host}')
         lsf.run_command(f'/home/holuser/hol/Tools/vcbrowser.sh {vc_host}')
+
         """
         # enable the MOB - skipping this for now - not high priority - need to revisit
         # edit /etc/vmware-vpxd/vpxd.cfg
@@ -151,17 +152,16 @@ if 'vcfnsxedges' in lsf.config['VCF'].keys():
         if "y" in answer:
             process_nsx_node(nsxedge)
 
-"""
-# TODO: need to revisit this next
-# Remove password expiry for admin, root and backup on sddcmanager-a
-# hardcoding the sddcmanager-a for now.
+# Remove password expiry for vcf, backup and root on sddcmanager-a
 sddcmgr = 'sddcmanager-a.site-a.vcf.lab'
-# need to massage the local_auth_file for the sddcmanager-a
-lsf.scp(local_auth_file, f'vcf@{sddcmgr}:{auth_file}', lsf.password)
+# only setup ssh auth to the sddcmanager-a from the console (manager rsa_id.pub not working)
+lsf.scp('/lmchol/homes/holuser/.ssh/id_rsa.pub', f'vcf@{sddcmgr}:{auth_file}', lsf.password)
 lsf.ssh('chmod 600 ~/.ssh/authorized_keys', f'vcf@{sddcmgr}', lsf.password)
-# now the tricky stuff - need another expect script to su -, send the password. then update password expiry
-"""
+# run the expect script to su -, send the password. then update password expiry
+print(f'configuring non-expiring passwords on {sddcmgr} for vcf, backup and root accounts...')
+lsf.run_command(f'/usr/bin/expect ~/hol/Tools/sddcmgr.exp {sddcmgr} {lsf.password}')
 
-# arp cache stuff in console, router and manager
+
+# arp cache stuff in console and router (Cannot do Manager except as root)
 for machine in ["console", "router"]:
     lsf.ssh('ip -s -s neigh flush all', f'root@{machine}', lsf.password)
