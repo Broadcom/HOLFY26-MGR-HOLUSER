@@ -1,4 +1,4 @@
-# confighol.py version 1.8 07-May 2025
+# confighol.py version 1.9 07-May 2025
 import os
 import glob
 from pyVim import connect
@@ -87,8 +87,7 @@ for entry in vcenters:
         print(f'fixing browser support and enabling MOB on {vc_host}')
         lsf.run_command(f'/home/holuser/hol/Tools/vcbrowser.sh {vc_host}')
 
-        """
-        # enable the MOB - skipping this for now - not high priority - need to revisit
+        # enable the MOB
         # edit /etc/vmware-vpxd/vpxd.cfg
         #<enableDebugBrowse>true</enableDebugBrowse>
         # service-control --restart vmware-vpxd
@@ -102,7 +101,6 @@ for entry in vcenters:
         tree.write(lvpxd)
         lsf.scp(lvpxd, f'root@{vc_host}:{vpxd}',  lsf.password)
         lsf.ssh('service-control --restart vmware-vpxd', f'root@{vc_host}', lsf.password)
-        """
 
     print(f'Setting non-expiring password for root on {vc_host}')
     lsf.ssh('chage -M -1 root', f'root@{vc_host}', lsf.password)
@@ -165,3 +163,7 @@ lsf.run_command(f'/usr/bin/expect ~/hol/Tools/sddcmgr.exp {sddcmgr} {lsf.passwor
 # arp cache stuff in console and router (Cannot do Manager except as root)
 for machine in ["console", "router"]:
     lsf.ssh('ip -s -s neigh flush all', f'root@{machine}', lsf.password)
+
+# final step is to call vpodchecker.py to update L2 VMs (uuid and typematicdelay)
+print("Starting vpodchecker.py...")
+os.system('python3 /home/holuser/hol/Tools/vpodchecker.py')
