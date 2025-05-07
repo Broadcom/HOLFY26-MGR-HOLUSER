@@ -1,4 +1,4 @@
-# confighol.py version 1.5 06-May 2025
+# confighol.py version 1.6 07-May 2025
 import os
 import glob
 from pyVim import connect
@@ -58,24 +58,24 @@ if 'vCenters' in lsf.config['RESOURCES'].keys():
     vcenters = lsf.config.get('RESOURCES', 'vCenters').split('\n')
 
 for entry in vcenters:
-    vc_host = entry.split(':')
+    (vc_host, vc_type, user) = entry.split(':')
     vcshell = False
-    answer = input(f'Enter "y" if you need to enable shell, MOB and browser support warning on {vc_host[0]} (n):')
+    answer = input(f'Enter "y" if you need to enable shell, MOB and browser support warning on {vc_host} (n):')
     if "y" in answer:
-        print(f'enabling shell on {vc_host[0]}...')
-        lsf.run_command(f'/usr/bin/expect vcshell.exp {vc_host[0]} {lsf.password}')
+        print(f'enabling shell on {vc_host}...')
+        lsf.run_command(f'/usr/bin/expect vcshell.exp {vc_hos} {lsf.password}')
 
-        print(f'enabling ssh auth for manager and LMC on {vc_host[0]}')
-        lsf.scp(local_auth_file, f'root@{vc_host[0]}:{vc_auth_file}', lsf.password)
-        lsf.ssh(f'chmod 600 {vc_auth_file}', f'root@{vc_host[0]}', lsf.password)
+        print(f'enabling ssh auth for manager and LMC on {vc_host}')
+        lsf.scp(local_auth_file, f'root@{vc_host}:{vc_auth_file}', lsf.password)
+        lsf.ssh(f'chmod 600 {vc_auth_file}', f'root@{vc_host}', lsf.password)
 
-        print(f'fixing browser support and enabling MOB on {vc_host[0]}')
-        lsf.run_command(f'/home/holuser/hol/Tools/vcbrowser.sh {vc_host[0]}')
+        print(f'fixing browser support and enabling MOB on {vc_host}')
+        lsf.run_command(f'/home/holuser/hol/Tools/vcbrowser.sh {vc_host}')
         # enable the MOB
         # edit /etc/vmware-vpxd/vpxd.cfg
         #<enableDebugBrowse>true</enableDebugBrowse>
         # service-control --restart vmware-vpxd
-        lsf.scp(f'root@{vc_host[0]}:{vpxd}', lvpxd, lsf.password)
+        lsf.scp(f'root@{vc_host}:{vpxd}', lvpxd, lsf.password)
         tree = et.parse(lvpxd)
         root = tree.getroot()
         parent = root.find('vpxd')
@@ -83,25 +83,17 @@ for entry in vcenters:
         mob.text = 'true'
         parent.append(mob)
         tree.write(lvpxd)
-        lsf.scp(lvpxd, f'root@{vc_host[0]}:{vpxd}',  lsf.password)
-        lsf.ssh('service-control --restart vmware-vpxd', f'root@{vc_host[0]}', lsf.password)
+        lsf.scp(lvpxd, f'root@{vc_host}:{vpxd}',  lsf.password)
+        lsf.ssh('service-control --restart vmware-vpxd', f'root@{vc_host}', lsf.password)
 
-    print(f'Setting non-expiring password for root on {vc_host[0]}')
-    lsf.ssh('chage -M -1 root', f'root@{vc_host[0]}', lsf.password)
+    #TODO: uncomment
+    print(f'Setting non-expiring password for root on {vc_host}')
+    lsf.ssh('chage -M -1 root', f'root@{vc_host}', lsf.password)
+    print(f'Disabling HA Admission Control and configuring DRS to be partially automated on {vc_host}...')
+    lsf.run_command(f'pwsh -File configholcluster.ps1 {vc_host} {user} {lsf.password}')  
 
 if vcenters:
     lsf.connect_vcenters(vcenters)
-
-# Set DRS to Partially Automated for all clusters
-# Configure HA Admission Controls for all clusters
-"""
-clusters = lsf.get_all_clusters()
-for cluster in clusters:
-    print(f'Configuring DRS to be partially automated on {cluster.name}...')
-    cluster.configuration.drsConfig.defaultVmBehavior = "partiallyAutomated"
-    print(f'Disabling admission control on {cluster.name}...')
-    cluster.dasConfig.admissionControlEnabled = false
-"""
 
 esx_hosts = []
 if 'ESXiHosts' in lsf.config['RESOURCES'].keys():
@@ -135,4 +127,3 @@ if esx_hosts:
 
 # arp cache stuff in console, router, all vCenters and manager
 # ip -s -s neigh flush all 
-
