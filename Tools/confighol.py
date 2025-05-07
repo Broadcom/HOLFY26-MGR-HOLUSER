@@ -10,6 +10,19 @@ import lsfunctions as lsf
 # this must be run manually. The VC shell part can only be run once.
 # must have an accurate /tmp/config.ini
 
+def process_nsx_node(nsxmachine):
+    nsxusers = ["admin", "root", "audit"]
+    print(f'enabling ssh auth for manager and LMC on {nsxmachine}')
+    lsf.scp(local_auth_file, f'root@{nsxmachine}:{auth_file}', lsf.password)
+    lsf.ssh(f'chmod 600 {auth_file}', f'root@{nsxmachine}', lsf.password)
+        
+    # Remove password expiry for admin, root and audit on all NSX Managers
+    
+    for nsxuser in nsxusers:
+        print(f'Removing password expiration for {nsxuser} on {nsxmachine}...')
+        lsf.ssh(f'clear user {nsxuser} password-expiration', f'admin@{nsxmachine}', lsf.password)
+
+
 # read the /tmp/config.ini
 lsf.init(router=False)
 
@@ -42,6 +55,7 @@ os.system('cp /home/holuser/.ssh/config /lmchol/home/holuser/.ssh/config')
 # create the authorized_keys file locally
 manager_key = lsf.getfilecontents('/home/holuser/.ssh/id_rsa.pub')
 lmc_key = lsf.getfilecontents('/lmchol/home/holuser/.ssh/id_rsa.pub')
+global local_auth_file
 local_auth_file = '/tmp/authorized_keys'
 with open(local_auth_file, 'w') as lf:
     lf.write(manager_key)
@@ -49,7 +63,8 @@ with open(local_auth_file, 'w') as lf:
     lf.close()
 
 esx_auth_file = '/etc/ssh/keys-root/authorized_keys'
-vc_auth_file = '/root/.ssh/authorized_keys'
+global auth_file
+auth_file = '/root/.ssh/authorized_keys'
 vpxd = '/etc/vmware-vpx/vpxd.cfg'
 lvpxd = '/tmp/vpxd.cfg'
 
@@ -66,8 +81,8 @@ for entry in vcenters:
         lsf.run_command(f'/usr/bin/expect vcshell.exp {vc_hos} {lsf.password}')
 
         print(f'enabling ssh auth for manager and LMC on {vc_host}')
-        lsf.scp(local_auth_file, f'root@{vc_host}:{vc_auth_file}', lsf.password)
-        lsf.ssh(f'chmod 600 {vc_auth_file}', f'root@{vc_host}', lsf.password)
+        lsf.scp(local_auth_file, f'root@{vc_host}:{auth_file}', lsf.password)
+        lsf.ssh(f'chmod 600 {auth_file}', f'root@{vc_host}', lsf.password)
 
         print(f'fixing browser support and enabling MOB on {vc_host}')
         lsf.run_command(f'/home/holuser/hol/Tools/vcbrowser.sh {vc_host}')
@@ -86,7 +101,6 @@ for entry in vcenters:
         lsf.scp(lvpxd, f'root@{vc_host}:{vpxd}',  lsf.password)
         lsf.ssh('service-control --restart vmware-vpxd', f'root@{vc_host}', lsf.password)
 
-    #TODO: uncomment
     print(f'Setting non-expiring password for root on {vc_host}')
     lsf.ssh('chage -M -1 root', f'root@{vc_host}', lsf.password)
     print(f'Disabling HA Admission Control and configuring DRS to be partially automated on {vc_host}...')
@@ -114,16 +128,33 @@ if esx_hosts:
                 break # go on to the next host
 
 # NSX stuff
-# add authorized_keys to all NSX Managers
-# Remove password expiry for admin, root and audit on all NSX Managers (nsx-mgmt-01a)
-# clear user admin password-expiration
-# clear user root password-expiration
-# clear user audit password-expiration
+vcfnsxmgr = []
+if 'vcfnsxmgr' in lsf.config['VCF'].keys():
+    vcfnsxmgrs = lsf.config.get('VCF', 'vcfnsxmgr').split('\n')
+    for entry in vcfnsxmgrs:
+        (nsxmgr, esxhost) = entry.split(':')
+        answer = input(f'Enter "y" if ssh is enabled on {nsxmgr} (n):')
+        if "y" in answer:
+            process_nsx_node(nsxmgr)
 
-# Set SSH key on all NSX Edges (edge-wld01-01a)
-# Remove password expiry for admin, root and audit on all NSX Edges
+vcfnsxedges = []
+if 'vcfnsxedges' in lsf.config['VCF'].keys():
+    vcfnsxedges = lsf.config.get('VCF', 'vcfnsxedges').split('\n')
+    for entry in vcfnsxedges:
+        (nsxedge, esxhost) = entry.split(':')
+        answer = input(f'Enter "y" if ssh is enabled on {nsxedge} (n):')
+        if "y" in answer:
+            process_nsx_node(nsxedge)
 
+"""
 # Remove password expiry for admin, root and backup on sddcmanager-a
+# hardcoding the sddcmanager-a for now.
+sddcmgr = 'sddcmanager-a.site-a.vcf.lab'
+lsf.scp(local_auth_file, f'vcf@{sddcmgr}:{auth_file}', lsf.password)
+lsf.ssh('chmod 600 ~/.ssh/authorized_keys', f'vcf@{sddcmgr}', lsf.password)
+# now the tricky stuff - need another expect script to su -, send the password. then update password expiry
 
 # arp cache stuff in console, router, all vCenters and manager
 # ip -s -s neigh flush all 
+"""
+
