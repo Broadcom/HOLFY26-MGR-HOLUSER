@@ -1,7 +1,7 @@
 #!/bin/sh
 
-# DEFAULT HOL FIREWALL RULESET
-# version 08-April 2025
+# NON-HOL FIREWALL RULESET
+# version 08-May 2025
 
 # clear any existing rules
 iptables --flush
@@ -126,8 +126,8 @@ iptables -A FORWARD -s 10.0.0.0/8 -d 10.0.0.0/8         -j ACCEPT
 # for NON-HOL labs turn off firewall
 
 iptables -P FORWARD ACCEPT
-# indicate that iptables is off
-[ -f ~holuser/firewall ] && rm -f ~holuser/firewall
+# this line is REQUIRED for /root/getrules.sh on the router
+> ~holuser/firewall
 
 # (add your rules here)
 
