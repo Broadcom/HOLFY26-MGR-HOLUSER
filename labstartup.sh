@@ -1,5 +1,5 @@
 #! /bin/sh
-# version 1.12 02-May 2025
+# version 1.13 09-May 2025
 
 git_pull() {
    cd $1
@@ -234,7 +234,6 @@ holdev=$(vmtoolsd --cmd 'info-get guestinfo.ovfEnv' 2>&1 | grep -i HOL-Dev)
 [ $? = 1 ] && prod=true
 
 yearrepo="${gitdrive}/20${year}-labs"
-yeargit="${yearrepo}/.git"
 vpodgitdir="${yearrepo}/${year}${index}"
 vpodgit="${vpodgitdir}/.git"
 
@@ -251,10 +250,6 @@ if [ $labtype = "HOL" ];then
          echo "FAIL - No GIT Project" > $startupstatus
          exit 1
       fi
-   elif [ ! -e ${yeargit} ];then
-     # yearrepo exists but no .git
-      echo "Creating new git repo for ${vPod_SKU}..." >> ${logfile}
-      git_clone $yearrepo
    else
       echo "Performing git pull for repo ${vpodgit}" >> ${logfile}
       git_pull $vpodgitdir
