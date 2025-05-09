@@ -1,5 +1,5 @@
 #!/usr/bin/sh
-# version 1.3 01-May 2025
+# version 1.4 09-May 2025
 
 if [ ! -f ~holuser/rtrcreds.txt ]; then
    echo "Enter the password for the holorouter:"
@@ -12,18 +12,10 @@ cd $HOME
 
 # remove the current folder in order to clone the correct repo
 autocheckdir=~holuser/autocheck
+[ -d $autocheckdir ] && rm -rf $autocheckdir
 
-grep 'git@holgitlab.oc.vmware.com:hol-labs/autocheck.git' ${autocheckdir}/.git/config > /dev/null
-fixautocheck=$?
-if [ $fixautocheck = 0 ]; then
-   echo "Pulling AutoCheck from public GitHub..."
-   rm -rf $autocheckdir
-   git clone https://github.com/broadcom/HOLFY26-MGR-AUTOCHECK.git $autocheckdir
-else
-   cd ~holuser/autocheck
-   echo -n "git pull: "
-   git pull
-fi
+echo "Cloning AutoCheck from public GitHub..."
+git clone -b main https://github.com/broadcom/HOLFY26-MGR-AUTOCHECK.git $autocheckdir
 
 # need to turn off proxyfiltering to install PSSQLite
 ~holuser/hol/Tools/proxyfilteroff.sh
