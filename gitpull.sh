@@ -1,5 +1,5 @@
 #! /bin/sh
-# version 1.3 - 08-May 2025
+# version 1.4 - 09-May 2025
 
 # the only job of this script is to do the initial Core Team git pull
 # and then call the lastest versions of VLPagent.sh and labstartup.sh
@@ -28,7 +28,7 @@ while true;do
       echo "FATAL could not perform git pull." >> ${logfile}
       exit  # do we exit here or just report?
    fi
-   git pull origin master >> ${logfile} 2>&1
+   git pull origin main >> ${logfile} 2>&1
    if [ $? = 0 ];then
       > /tmp/coregitdone
       break
