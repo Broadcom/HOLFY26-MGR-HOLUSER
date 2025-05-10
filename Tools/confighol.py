@@ -1,4 +1,4 @@
-# confighol.py version 1.9 07-May 2025
+# confighol.py version 1.10 10-May 2025
 import os
 import glob
 from pyVim import connect
@@ -72,13 +72,34 @@ vcenters = []
 if 'vCenters' in lsf.config['RESOURCES'].keys():
     vcenters = lsf.config.get('RESOURCES', 'vCenters').split('\n')
 
+# need to connect to vCenters in order to enable ssh on ESXi hosts
+if vcenters:
+    lsf.connect_vcenters(vcenters)
+
+esx_hosts = []
+if 'ESXiHosts' in lsf.config['RESOURCES'].keys():
+    esx_hosts = lsf.config.get('RESOURCES', 'ESXiHosts').split('\n')
+
+if esx_hosts:
+    for entry in esx_hosts:
+        (host, mm) = entry.split(':')
+        while True:
+            if lsf.test_ping(host):
+                lsf.enable_ssh_on_esx(host)
+                lsf.scp(local_auth_file, f'root@{host}:{esx_auth_file}', lsf.password)
+                lsf.ssh(f'chmod 600 {esx_auth_file}', f'root@{host}', lsf.password)
+                lsf.update_session_timeout(host, 0)
+                print(f'Setting non-expiring password for root on {host}')
+                lsf.ssh('chage -M 9999 root', f'root@{host}', lsf.password)
+                break # go on to the next host
+
 for entry in vcenters:
     (vc_host, vc_type, user) = entry.split(':')
     vcshell = False
     answer = input(f'Enter "y" if you need to enable shell and browser support warning on {vc_host} (n):')
     if "y" in answer:
         print(f'enabling shell on {vc_host}...')
-        lsf.run_command(f'/usr/bin/expect ~/hol/Tools/vcshell.exp {vc_hos} {lsf.password}')
+        lsf.run_command(f'/usr/bin/expect ~/hol/Tools/vcshell.exp {vc_host} {lsf.password}')
 
         print(f'enabling ssh auth for manager and LMC on {vc_host}')
         lsf.scp(local_auth_file, f'root@{vc_host}:{auth_file}', lsf.password)
@@ -108,28 +129,6 @@ for entry in vcenters:
     lsf.run_command(f'pwsh -File configholcluster.ps1 {vc_host} {user} {lsf.password}')
     print(f'Clearing arp cache for {vc_host}...')
     lsf.ssh('ip -s -s neigh flush all', f'root@{vc_host}', lsf.password)
-
-# need to connect to vCenters in order to enable ssh on ESXi hosts
-if vcenters:
-    lsf.connect_vcenters(vcenters)
-
-esx_hosts = []
-if 'ESXiHosts' in lsf.config['RESOURCES'].keys():
-    esx_hosts = lsf.config.get('RESOURCES', 'ESXiHosts').split('\n')
-
-if esx_hosts:
-    for entry in esx_hosts:
-        (host, mm) = entry.split(':')
-        while True:
-            if lsf.test_ping(host):
-                lsf.enable_ssh_on_esx(host)
-                # lsf.test_esx()
-                lsf.scp(local_auth_file, f'root@{host}:{esx_auth_file}', lsf.password)
-                lsf.ssh(f'chmod 600 {esx_auth_file}', f'root@{host}', lsf.password)
-                lsf.update_session_timeout(host, 0)
-                print(f'Setting non-expiring password for root on {host}')
-                lsf.ssh('chage -M 9999 root', f'root@{host}', lsf.password)
-                break # go on to the next host
 
 # NSX stuff
 vcfnsxmgr = []
