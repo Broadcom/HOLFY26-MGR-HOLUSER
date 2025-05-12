@@ -1,4 +1,4 @@
-# ESXi.py version 1.11 28-April 2025
+# ESXi.py version 1.12 12-May 2025
 import datetime
 import os
 import sys
@@ -39,7 +39,7 @@ if esx_hosts:
         (host, mm) = entry.split(':')
         while True:
             if lsf.labtype == "HOL":
-                if lsf.test_esx(host):
+                if lsf.test_ping(host):  # just ping because VCF.py will verify
                     break # go on to the next host
                 else:
                     lsf.write_output(f'Unable to test {host}. FAIL')
