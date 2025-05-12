@@ -1,4 +1,4 @@
-# confighol.py version 1.10 10-May 2025
+# confighol.py version 1.11 12-May 2025
 import os
 import glob
 from pyVim import connect
@@ -126,7 +126,8 @@ for entry in vcenters:
     print(f'Setting non-expiring password for root on {vc_host}')
     lsf.ssh('chage -M -1 root', f'root@{vc_host}', lsf.password)
     print(f'Disabling HA Admission Control and configuring DRS to be partially automated on {vc_host}...')
-    lsf.run_command(f'pwsh -File configholcluster.ps1 {vc_host} {user} {lsf.password}')
+    print(f'Configuring local accounts and password policies on {vc_host}...')
+    lsf.run_command(f'pwsh -File configvsphere.ps1 {vc_host} {user} {lsf.password}')
     print(f'Clearing arp cache for {vc_host}...')
     lsf.ssh('ip -s -s neigh flush all', f'root@{vc_host}', lsf.password)
 
