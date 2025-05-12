@@ -158,6 +158,14 @@ lsf.ssh('chmod 600 ~/.ssh/authorized_keys', f'vcf@{sddcmgr}', lsf.password)
 print(f'configuring non-expiring passwords on {sddcmgr} for vcf, backup and root accounts...')
 lsf.run_command(f'/usr/bin/expect ~/hol/Tools/sddcmgr.exp {sddcmgr} {lsf.password}')
 
+# OPs stuff
+opsvms = [ 'ops-a', 'opslcm-a', 'opsdata-01a' ]
+for opsvm in opsvms:
+    print(f'Setting non-expiring password for root on {opsvm}')
+    lsf.ssh('chage -M -1 root', f'root@{opsvm}', lsf.password)
+    print(f'enabling ssh auth for manager and LMC on {opsvm}')
+    lsf.scp(local_auth_file, f'root@{opsvm}:{auth_file}', lsf.password)
+    lsf.ssh(f'chmod 600 {auth_file}', f'root@{opsvm}', lsf.password)
 
 # arp cache stuff in console and router (Cannot do Manager except as root)
 for machine in ["console", "router"]:
