@@ -1,4 +1,4 @@
-# confighol.py version 1.11 12-May 2025
+# confighol.py version 1.12 21-May 2025
 import os
 import glob
 from pyVim import connect
@@ -85,6 +85,7 @@ if esx_hosts:
         (host, mm) = entry.split(':')
         while True:
             if lsf.test_ping(host):
+                lsf.connect_vc(host, 'root', lsf.password)
                 lsf.enable_ssh_on_esx(host)
                 lsf.scp(local_auth_file, f'root@{host}:{esx_auth_file}', lsf.password)
                 lsf.ssh(f'chmod 600 {esx_auth_file}', f'root@{host}', lsf.password)
@@ -132,23 +133,24 @@ for entry in vcenters:
     lsf.ssh('ip -s -s neigh flush all', f'root@{vc_host}', lsf.password)
 
 # NSX stuff
-vcfnsxmgr = []
-if 'vcfnsxmgr' in lsf.config['VCF'].keys():
-    vcfnsxmgrs = lsf.config.get('VCF', 'vcfnsxmgr').split('\n')
-    for entry in vcfnsxmgrs:
-        (nsxmgr, esxhost) = entry.split(':')
-        answer = input(f'Enter "y" if ssh is enabled on {nsxmgr} (n):')
-        if "y" in answer:
-            process_nsx_node(nsxmgr)
+if 'VCF' in lsf.config:
+    vcfnsxmgr = []
+    if 'vcfnsxmgr' in lsf.config['VCF'].keys():
+        vcfnsxmgrs = lsf.config.get('VCF', 'vcfnsxmgr').split('\n')
+        for entry in vcfnsxmgrs:
+            (nsxmgr, esxhost) = entry.split(':')
+            answer = input(f'Enter "y" if ssh is enabled on {nsxmgr} (n):')
+            if "y" in answer:
+                process_nsx_node(nsxmgr)
 
-vcfnsxedges = []
-if 'vcfnsxedges' in lsf.config['VCF'].keys():
-    vcfnsxedges = lsf.config.get('VCF', 'vcfnsxedges').split('\n')
-    for entry in vcfnsxedges:
-        (nsxedge, esxhost) = entry.split(':')
-        answer = input(f'Enter "y" if ssh is enabled on {nsxedge} (n):')
-        if "y" in answer:
-            process_nsx_node(nsxedge)
+    vcfnsxedges = []
+    if 'vcfnsxedges' in lsf.config['VCF'].keys():
+        vcfnsxedges = lsf.config.get('VCF', 'vcfnsxedges').split('\n')
+        for entry in vcfnsxedges:
+            (nsxedge, esxhost) = entry.split(':')
+            answer = input(f'Enter "y" if ssh is enabled on {nsxedge} (n):')
+            if "y" in answer:
+                process_nsx_node(nsxedge)
 
 # Remove password expiry for vcf, backup and root on sddcmanager-a
 sddcmgr = 'sddcmanager-a.site-a.vcf.lab'
