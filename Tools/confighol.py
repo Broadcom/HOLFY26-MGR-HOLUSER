@@ -9,6 +9,7 @@ import lsfunctions as lsf
 
 # this must be run manually. The VC shell part can only be run once.
 # must have an accurate /tmp/config.ini
+# dummy change to trigger sync
 
 def process_nsx_node(nsxmachine):
     nsxusers = ["admin", "root", "audit"]
