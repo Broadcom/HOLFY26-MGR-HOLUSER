@@ -1,4 +1,4 @@
-# confighol.py version 1.12 21-May 2025
+# confighol.py version 1.13 22-May 2025
 import os
 import glob
 from pyVim import connect
@@ -9,7 +9,6 @@ import lsfunctions as lsf
 
 # this must be run manually. The VC shell part can only be run once.
 # must have an accurate /tmp/config.ini
-# dummy change to trigger sync
 
 def process_nsx_node(nsxmachine):
     nsxusers = ["admin", "root", "audit"]
@@ -163,7 +162,14 @@ print(f'configuring non-expiring passwords on {sddcmgr} for vcf, backup and root
 lsf.run_command(f'/usr/bin/expect ~/hol/Tools/sddcmgr.exp {sddcmgr} {lsf.password}')
 
 # OPs stuff
-opsvms = [ 'ops-a', 'opslcm-a', 'opsdata-01a' ]
+opsvms = []
+if 'VMs' in lsf.config['RESOURCES'].keys():
+    vms = lsf.config.get('RESOURCES', 'VMs').split('\n')
+    for vm in vms:
+        if "ops" in vm:
+            (ops, vc) = vm.split(':')
+            opsvms.append(ops)
+
 for opsvm in opsvms:
     print(f'Setting non-expiring password for root on {opsvm}')
     lsf.ssh('chage -M -1 root', f'root@{opsvm}', lsf.password)
