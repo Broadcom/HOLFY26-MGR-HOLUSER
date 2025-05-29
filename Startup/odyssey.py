@@ -91,7 +91,7 @@ else:
 
 # only run if the pod is deployed by VLP and in an identified cloud org
 # DEBUG ONLY
-run_odyssey_prep = True  
+# run_odyssey_prep = True  
 if run_odyssey_prep and lsf.odyssey and not lsf.labcheck:  # VLP deployments and Configuration.txt enabled
 
     lsf.write_output('Begin Odyssey Install...', logfile=lsf.logfile)
