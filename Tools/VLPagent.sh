@@ -1,5 +1,5 @@
 #!/bin/sh
-# version 1.11 - 05-May 2025
+# version 1.13 - 29-May 2025
 
 get_vpod_repo() {
    # calculate the git repo based on the vPod_SKU
@@ -19,12 +19,12 @@ logfile='/tmp/VLPagentsh.log'
 # labstartup.sh creates the vPod_SKU.txt file
 vPod_SKU=$(cat /tmp/vPod_SKU.txt)
 # install this version
-if [ ${vPod_SKU} = "HOL-2535" ];then
-   vlpagentversion='1.0.6'  # could use a different version in this case
+if [ "${vPod_SKU}" = "HOL-2535" ];then
+   vlpagentversion='1.0.7'  # could use a different version in this case
    # overwrite logfile on first write
    echo "Using special VLP Agent version ${vlpagentversion} for ${vPod_SKU}" > $logfile
 else
-   vlpagentversion='1.0.6'
+   vlpagentversion='1.0.7'
    # overwrite logfile on first write
    echo "Using special VLP Agent version ${vlpagentversion} for ${vPod_SKU}" > $logfile
 fi
