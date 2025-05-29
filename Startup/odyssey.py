@@ -1,4 +1,4 @@
-# odyssey.py - version v1.9 - 16-April 2025
+# odyssey.py - version v1.10 - 29-May 2025
 import sys
 import lsfunctions as lsf
 import os
@@ -91,7 +91,7 @@ else:
 
 # only run if the pod is deployed by VLP and in an identified cloud org
 # DEBUG ONLY
-# run_odyssey_prep = True  
+run_odyssey_prep = True  
 if run_odyssey_prep and lsf.odyssey and not lsf.labcheck:  # VLP deployments and Configuration.txt enabled
 
     lsf.write_output('Begin Odyssey Install...', logfile=lsf.logfile)
@@ -103,7 +103,8 @@ if run_odyssey_prep and lsf.odyssey and not lsf.labcheck:  # VLP deployments and
         if response.status_code == 200:
             lsf.write_output(f'Latest {odyssey_app} downloaded', logfile=lsf.logfile)
             with open(f'/tmp/{odyssey_app}', 'wb') as out_file:
-                shutil.copyfileobj(response.raw, out_file) # need to use os            
+                shutil.copyfileobj(response.raw, out_file) # need to use os
+            os.system( f'chmod 755 /tmp/{odyssey_app}')      
             lsf.write_output(f'Copying /tmp/{odyssey_app} to {lsf.mc}/{odyssey_dst}/{odyssey_app}', logfile=lsf.logfile)
             os.system(f'cp /tmp/{odyssey_app} {lsf.mc}/{odyssey_dst}/{odyssey_app}')  # shutil.copy gets permission error
         else:
@@ -134,6 +135,17 @@ if run_odyssey_prep and lsf.odyssey and not lsf.labcheck:  # VLP deployments and
         result = lsf.ssh(lcmd, lmcuser, lsf.password, logfile=lsf.logfile)
         lcmd = f'/usr/bin/chmod a+x /home/holuser/Desktop/{ody_shortcut} '
         result = lsf.ssh(lcmd, lmcuser, lsf.password, logfile=lsf.logfile)
+        # begin updates for Ubuntu 24.04 due to AppImage dependency on fuse2 which is unavailable
+        with open('/lmchol/tmp/extract.sh', 'w') as script:
+            script.write('#/bin/sh\ncd /home/holuser/desktop-hol\n./odyssey-client-linux.AppImage --appimage-extract')
+        script.close()
+        lcmd = f'/bin/sh /tmp/extract.sh'
+        result = lsf.ssh(lcmd, lmcuser, lsf.password, logfile=lsf.logfile)
+        sandbox = '/home/holuser/desktop-hol/squashfs-root/chrome-sandbox'
+        lcmd = f'chown root:root {sandbox}'
+        result = lsf.ssh(lcmd, 'root@console', lsf.password, logfile=lsf.logfile)
+        lcmd = f'chmod 4755 {sandbox}'
+        result = lsf.ssh(lcmd, 'root@console', lsf.password, logfile=lsf.logfile)
     
     if os.path.isfile(f'{lsf.mc}/{desktop}/{ody_shortcut}'):
         lsf.write_output('Finished Odyssey install.', logfile=lsf.logfile) 

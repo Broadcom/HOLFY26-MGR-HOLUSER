@@ -1,7 +1,7 @@
 #!/bin/bash
-# version 1.1 16-January 2024
+# version 1.2 29-May 2025
 
-odyssey_client=/home/holuser/desktop-hol/odyssey-client-linux.AppImage
+odyssey_client=/home/holuser/desktop-hol/squashfs-root/AppRun
 chmod 774 $odyssey_client
 
 echo "#!/usr/bin/bash
