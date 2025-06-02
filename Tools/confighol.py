@@ -117,12 +117,16 @@ for entry in vcenters:
         tree = et.parse(lvpxd)
         root = tree.getroot()
         parent = root.find('vpxd')
-        mob = et.Element('enableDebugBrowse')
-        mob.text = 'true'
-        parent.append(mob)
-        tree.write(lvpxd)
-        lsf.scp(lvpxd, f'root@{vc_host}:{vpxd}',  lsf.password)
-        lsf.ssh('service-control --restart vmware-vpxd', f'root@{vc_host}', lsf.password)
+        mob = parent.find('enableDebugBrowse')
+        if mob is None:
+            mob = et.Element('enableDebugBrowse')
+            mob.text = 'true'
+            parent.append(mob)
+            tree.write(lvpxd)
+            lsf.scp(lvpxd, f'root@{vc_host}:{vpxd}',  lsf.password)
+            lsf.ssh('service-control --restart vmware-vpxd', f'root@{vc_host}', lsf.password)
+        else:
+            print(f'mob is already enabled on {vc_host}')
 
     print(f'Setting non-expiring password for root on {vc_host}')
     lsf.ssh('chage -M -1 root', f'root@{vc_host}', lsf.password)
