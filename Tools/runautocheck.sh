@@ -1,5 +1,5 @@
 #!/usr/bin/sh
-# version 1.5 10-June 2025
+# version 1.5.1 10-June 2025
 
 if [ ! -f ~holuser/rtrcreds.txt ]; then
    echo "Enter the password for the holorouter:"
@@ -16,17 +16,9 @@ autocheckdir=~holuser/autocheck
 
 echo "Cloning AutoCheck from public GitHub..."
 
-jcount=0
-autorepo="https://github.com/broadcom/HOLFY26-MGR-AUTOCHECK2.git"
-git ls-remote ${autorepo} -q > /dev/null 2>&1 &
-jcount=$(jobs | wc -l)
-if [ ${jcount} != 0 ] ; then
-   echo "${autorepo} repo does not exist."
-   kill %1
-else
-   autorepo="https://github.com/broadcom/HOLFY26-MGR-AUTOCHECK.git"
-   echo "AUTOCHECK2 repo does not exist yet. Using ${autorepo} instead."
-fi
+autorepo="https://github.com/broadcom/HOLFY26-MGR-AUTOCHECK.git"
+# uncomment the next line when AUTOCHECK2 repo is available
+#autorepo="https://github.com/broadcom/HOLFY26-MGR-AUTOCHECK2.git"
 
 git clone -b main ${autorepo} $autocheckdir > /dev/null 2>&1
 
