@@ -161,7 +161,7 @@ if vcenters:
             lsf.start_nested(vms)
             break
         except Exception as e:
-            lsf.write_output('Unable to start vVMs. Will try again.')
+            lsf.write_output('Still powering on vVMs. Will try again.')
         lsf.labstartup_sleep(lsf.sleep_seconds)
 
     
