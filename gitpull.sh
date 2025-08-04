@@ -9,9 +9,9 @@
 
 # initialize the logfile
 logfile='/tmp/labstartupsh.log'
-> ${logfile}
+echo "Initializing log file" > ${logfile}
 
-cd /home/holuser/hol
+cd /home/holuser/hol || exit
 
 hol="/home/holuser"
 
@@ -24,13 +24,13 @@ done
 
 ctr=0
 while true;do
-   if [ $ctr -gt 30 ];then
+   if [ "$ctr" -gt 30 ];then
       echo "FATAL could not perform git pull." >> ${logfile}
       exit  # do we exit here or just report?
    fi
    git pull origin main >> ${logfile} 2>&1
    if [ $? = 0 ];then
-      > /tmp/coregitdone
+      echo "" > /tmp/coregitdone
       break
    else
       gitresult=$(grep 'could not be found' ${logfile})
@@ -42,6 +42,6 @@ while true;do
          echo "Could not complete git pull. Will try again." >> ${logfile}
       fi
   fi
-  ctr=$(expr $ctr + 1)
+  ctr=$(("$ctr" + 1))
   sleep 5
 done

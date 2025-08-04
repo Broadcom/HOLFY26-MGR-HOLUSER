@@ -127,7 +127,7 @@ iptables -A FORWARD -s 10.0.0.0/8 -d 10.0.0.0/8         -j ACCEPT
 
 iptables -P FORWARD ACCEPT
 # this line is REQUIRED for /root/getrules.sh on the router
-> ~holuser/firewall
+echo "" > ~holuser/firewall
 
 # (add your rules here)
 

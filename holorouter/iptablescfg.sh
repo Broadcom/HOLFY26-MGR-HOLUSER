@@ -131,4 +131,4 @@ iptables -A FORWARD -s 10.0.0.0/8 -d 10.0.0.0/8         -j ACCEPT
 iptables -P FORWARD DROP
 
 # indicate that iptables has run
-> ~holuser/firewall
+echo "" > ~holuser/firewall
