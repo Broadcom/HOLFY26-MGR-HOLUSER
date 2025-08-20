@@ -236,6 +236,8 @@ holdev=$(vmtoolsd --cmd 'info-get guestinfo.ovfEnv' 2>&1 | grep -i HOL-Dev)
 yearrepo="${gitdrive}/20${year}-labs"
 vpodgitdir="${yearrepo}/${year}${index}"
 vpodgit="${vpodgitdir}/.git"
+# Reset the vPod Git directory to prevent failed sync due to local changes captured:
+rm -Rf "${vpodgitdir}"
 
 if [ "$labtype" = "HOL" ];then
    # use git clone if local git repo is new else git pull for existing local repo
