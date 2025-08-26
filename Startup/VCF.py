@@ -49,6 +49,8 @@ if 'vcfmgmtdatastore' in lsf.config['VCF'].keys():
     vcfmgmtdatastore = lsf.config.get('VCF', 'vcfmgmtdatastore').split('\n')
     lsf.write_vpodprogress('VCF Datastore check', 'GOOD-3', color=color)
     for datastore in vcfmgmtdatastore:
+        dsfailctr = 0
+        dsfailmaxctr = 10
         while True:
             try:
                 lsf.write_output(f'Attempting to check datastore {datastore}')
@@ -74,7 +76,13 @@ if 'vcfmgmtdatastore' in lsf.config['VCF'].keys():
                 else:
                     lsf.write_output(f'ds.summary.accessible: {ds.summary.accessible}')
             except Exception as e:
-                lsf.write_output(f'Unable to check datastore {datastore}. Will try again in 30 seconds. {e}')
+                dsfailctr += 1
+                lsf.write_output(f'Unable to check datastore {datastore}, attempt {dsfailctr}/{dsfailmaxctr}. Will try again in 30 seconds. {e}')
+                # If this exception is hit 10 times, fail the lab so that a new prepop can be deployed
+                if dsfailctr == dsfailmaxctr:
+                    lsf.write_output(f'{datastore} has not come up properly. Failing lab.')
+                    lsf.labfail(f'{datastore} DOWN')  
+
                 lsf.labstartup_sleep(30)
 
 # Start the NSX Manager due to Tanzu

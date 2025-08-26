@@ -138,15 +138,37 @@ operation_install() {
         fi
     fi
 
-    # Download JAR file if doesn't exist
+    # Download JAR file if it doesn't exist
     echo "Downloading Agent version $AGENT_VERSION"
-    if [ ! -f $AGENT_NAME ]; then
-        url="$AGENT_URL$AGENT_VERSION.jar"
-        if curl --output /dev/null --silent --head --fail "$url"; then
-            curl -o $AGENT_NAME $url
-            chmod +x $AGENT_NAME
-        else
-            echo "Agent version not found: $AGENT_VERSION"
+    if [ ! -f "$AGENT_NAME" ]; then
+        url="${AGENT_URL}${AGENT_VERSION}.jar"
+        attempt=1
+        success=false
+
+        while [ $attempt -le 10 ]; do
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Attempt $attempt: Checking $url"
+            
+            # Run HEAD request and capture both exit code and stderr
+            output=$(curl --silent --head --fail "$url" 2>&1 > /dev/null)
+            status=$?
+
+            if [ $status -eq 0 ]; then
+                echo "URL is reachable. Downloading..."
+                curl -o "$AGENT_NAME" "$url"
+                chmod +x "$AGENT_NAME"
+                success=true
+                break
+            else
+                echo "Attempt $attempt failed (exit code $status). Error: $output"
+                echo "Retrying in 10 seconds..."
+                sleep 10
+            fi
+
+            attempt=$((attempt+1))
+        done
+
+        if [ "$success" = false ]; then
+            echo "Agent version not found after $attempt-1 attempts: $AGENT_VERSION"
             exit 1
         fi
     else

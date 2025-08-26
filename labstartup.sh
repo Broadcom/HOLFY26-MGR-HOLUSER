@@ -36,11 +36,31 @@ git_pull() {
 }
 
 git_clone() {
-  cd "$1" || exit
-  echo "Performing git clone for repo ${vpodgit}" >> ${logfile}
-  # git clone -b dev https://github.com/Broadcom/HOL-2610.git /vpodrepo/2026-labs/2610
-  echo "git clone  -b $branch $gitproject $vpodgitdir" >> ${logfile}
-  git clone  -b $branch "$gitproject" "$vpodgitdir" >> ${logfile} 2>&1
+   cd "$1" || exit
+   ctr=0
+   while true;do
+      if [ "$ctr" -gt 30 ];then
+         echo "Could not perform git clone. failing vpod." >> ${logfile}
+         echo "FAIL - Could not clone GIT Project" > $startupstatus
+         exit 1
+      fi
+      echo "Performing git clone for repo ${vpodgit}" >> ${logfile}
+      # git clone -b dev https://github.com/Broadcom/HOL-2610.git /vpodrepo/2026-labs/2610
+      echo "git clone  -b $branch $gitproject $vpodgitdir" >> ${logfile}
+      git clone  -b $branch "$gitproject" "$vpodgitdir" >> ${logfile} 2>&1
+      if [ $? = 0 ];then
+        break
+      else
+         gitresult=$(grep 'Could not resolve host' ${logfile})
+         if [ $? = 0 ];then
+            echo "DNS did not resolve, will try again" >> ${logfile}
+         else
+            echo "Could not complete git pull. Will try again." >> ${logfile}
+         fi
+      fi
+      ctr=$(("$ctr" + 1))
+      sleep 5
+   done
 }
 
 runlabstartup() {
@@ -236,8 +256,9 @@ holdev=$(vmtoolsd --cmd 'info-get guestinfo.ovfEnv' 2>&1 | grep -i HOL-Dev)
 yearrepo="${gitdrive}/20${year}-labs"
 vpodgitdir="${yearrepo}/${year}${index}"
 vpodgit="${vpodgitdir}/.git"
-# Reset the vPod Git directory to prevent failed sync due to local changes captured:
-rm -Rf "${vpodgitdir}"
+# Reset the vPod Git directory to prevent failed sync due to local changes captured: -- actually not necessary
+# If prod, git stash is run before git pull. If dev, there can/will be error if there have been local changes
+# rm -Rf "${vpodgitdir}"
 
 if [ "$labtype" = "HOL" ];then
    # use git clone if local git repo is new else git pull for existing local repo

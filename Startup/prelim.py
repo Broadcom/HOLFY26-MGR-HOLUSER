@@ -1,6 +1,7 @@
 # prelim.py version 1.15 06-April 2025
 import sys
 import os
+import shutil
 import glob
 import logging
 import datetime
@@ -46,7 +47,9 @@ if lsf.labtype == "HOL":
             readme_tdiff = os.path.getmtime(repo_readme) - os.path.getmtime(mc_readme)
             if readme_tdiff > 0:
                 lsf.write_output('vPodrepo README is different and newer. Copying to Main Console...')
-                os.system(f'cp -p {repo_readme} {mc_readme}')
+                shutil.copyfile(repo_readme, mc_readme)
+                # old method below does not support spaces in filename
+                # os.system(f'cp -p {repo_readme} {mc_readme}')
             elif readme_tdiff < 0:
                 lsf.write_output('Changes detected on MC README. Please add to vPodrepo and check in.')
         else:
@@ -56,7 +59,11 @@ if lsf.labtype == "HOL":
 
 # prevent update manager from showing window for updates if LMC
 if lsf.LMC and lsf.labtype == 'HOL':
-    lsf.ssh(f'pkill update-manager;pkill update-notifier', 'holuser@console', lsf.password)
+    try:
+        lsf.write_output('Making sure updates are not showing on console...')
+        lsf.ssh(f'pkill update-manager;pkill update-notifier', 'holuser@console', lsf.password)
+    except Exception as e:
+        lsf.write_output(f'exception: {e}')
 
 # prevent the annoying Firefox banner if WMC
 if lsf.WMC and lsf.labtype == 'HOL':

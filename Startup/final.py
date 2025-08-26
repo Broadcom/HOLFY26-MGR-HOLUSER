@@ -30,7 +30,12 @@ if lsf.labcheck == False:
 
 # prevent update manager from showing window for updates if LMC
 if lsf.LMC and lsf.labtype == 'HOL':
-    lsf.ssh(f'pkill update-manager;pkill update-notifier', 'holuser@console', lsf.password)
+    try:
+        lsf.write_output('Making sure updates are not showing on console...')
+        lsf.ssh(f'pkill update-manager;pkill update-notifier', 'holuser@console', lsf.password)
+    except Exception as e:
+        lsf.write_output(f'exception: {e}')
+
 
 # add any code you want to run at the end of the startup before final "Ready"
 #lsf.write_output("This is final.py output")
