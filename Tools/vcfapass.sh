@@ -3,7 +3,7 @@ set timeout 20
 set old_password [lindex $argv 0]
 set new_password [lindex $argv 1]
 
-spawn ssh $user@$host
+spawn ssh vmware-system-user@10.1.1.71
 expect "(vmware-system-user@10.1.1.71) Password:"
 send "$old_password\r"
 expect "You are required to change your password immediately (administrator enforced)."
