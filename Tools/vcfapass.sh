@@ -1,4 +1,6 @@
 #!/usr/bin/expect -f
+# HOL Usage: vcfapass.sh $(cat ~/creds.txt) $(cat ~/NEWPASSWORD.txt)
+#     Note: NEWPASSWORD.txt is created in the labstartup.sh by calling the holpwgen.sh script
 set timeout 20
 set old_password [lindex $argv 0]
 set new_password [lindex $argv 1]
