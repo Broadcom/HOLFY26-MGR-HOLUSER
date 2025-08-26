@@ -94,7 +94,9 @@ WMC=false
 [ -d /home/holuser/hol/vpodrouter ] && router='vpodrouter'
 [ -d /home/holuser/hol/holorouter ] && router='holorouter'
 password=$(cat /home/holuser/creds.txt)
-
+if [ ! -f /home/holuser/NEWPASSWORD.txt ];then
+   /bin/bash /home/holuser/hol/Tools/holpwgen.sh > /home/holuser/NEWPASSWORD.txt
+fi
 # because we're running as an at or cron job, source the environment variables
 . /home/holuser/.bashrc
 
