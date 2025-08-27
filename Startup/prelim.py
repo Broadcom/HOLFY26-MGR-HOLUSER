@@ -208,9 +208,7 @@ if not lsf.labcheck:
 #
 
 # fail like this
-#now = datetime.datetime.now()
-#delta = now - lsf.start_time
-#lsf.labfail('PRELIM ISSUE', delta)
+#lsf.labfail('PRELIM ISSUE')
 #exit(1)
 
 lsf.write_output(f'{sys.argv[0]} finished.', logfile=lsf.logfile) 

@@ -144,9 +144,7 @@ if 'vraurls' in lsf.config['VCFFINAL'].keys():
             ctr += 1
             if ctr == 16:
                 lsf.write_output(f'Automation URLS failed to come up, Failing lab')
-                now = datetime.datetime.now()
-                delta = now - lsf.start_time
-                lsf.labfail('Automation URLS not accessible', delta)
+                lsf.labfail('Automation URLS not accessible')
                 exit(1)
             # was lsf.sleep_seconds, but that is 5s and too short
             lsf.labstartup_sleep(30)             

@@ -81,9 +81,7 @@ if 'vcfmgmtdatastore' in lsf.config['VCF'].keys():
                 # If this exception is hit 10 times, fail the lab so that a new prepop can be deployed
                 if dsfailctr == dsfailmaxctr:
                     lsf.write_output(f'{datastore} has not come up properly. Failing lab.')
-                    now = datetime.datetime.now()
-                    delta = now - lsf.start_time
-                    lsf.labfail(f'{datastore} DOWN', delta)
+                    lsf.labfail(f'{datastore} DOWN')
                     exit(1)
 
                 lsf.labstartup_sleep(30)
