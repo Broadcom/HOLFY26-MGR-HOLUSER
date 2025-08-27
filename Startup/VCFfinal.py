@@ -142,7 +142,7 @@ if 'vraurls' in lsf.config['VCFFINAL'].keys():
         while not lsf.test_url(url[0], pattern=url[1], timeout=2, verbose=False):
             lsf.write_output(f'Sleeping and will try again...')
             ctr += 1
-            if ctr == 16:
+            if ctr == 20:
                 lsf.write_output(f'Automation URLS failed to come up, Failing lab')
                 lsf.labfail('Automation URLS not accessible')
                 exit(1)
