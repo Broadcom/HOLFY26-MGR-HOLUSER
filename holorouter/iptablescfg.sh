@@ -122,7 +122,7 @@ iptables -A FORWARD -s 10.0.0.0/8 -d 172.16.0.0/12      -j ACCEPT
 iptables -A FORWARD -s 10.0.0.0/8 -d 10.0.0.0/8         -j ACCEPT
 
 ### LAB-SPECIFIC RULES
-ip6tabels -P FORWARD ACCEPT
+ip6tables -P FORWARD ACCEPT
 ip6tables -P INPUT ACCEPT
 ip6tables -P OUTPUT ACCEPT
 # (add your rules here)
