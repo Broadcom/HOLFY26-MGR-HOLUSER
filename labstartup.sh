@@ -1,4 +1,4 @@
-#! /bin/sh
+#! /bin/bash
 # version 1.13 09-May 2025
 
 git_pull() {
