@@ -141,15 +141,15 @@ if 'vraurls' in lsf.config['VCFFINAL'].keys():
         ctr = 0
         while not lsf.test_url(url[0], pattern=url[1], timeout=2, verbose=False):
             ctr += 1
-            lsf.write_output(f'Sleeping and will try again... {ctr} / 16')
-            if ctr == 16:
-                lsf.write_output(f'Automation URLS failed to come up, attempting watchvcfa.sh')
+            lsf.write_output(f'Sleeping and will try again... {ctr} / 20')
+            if ctr == 20:
+                lsf.write_output(f'Automation URLS failed to come up, failng...')
                 # TODO: Add watchvcfa.sh and expired password fix commands here to attempt reboot and K8s pod fixes
-                lsf.run_command("/home/holuser/hol/Tools/watchvcfa.sh")
-                #lsf.labfail('Automation URLS not accessible')
-                #exit(1)
+                #lsf.run_command("/home/holuser/hol/Tools/watchvcfa.sh")
+                lsf.labfail('fail: Automation URLS not accessible')
+                exit(1)
                 # Try to prevent excessive logging while waiting for VLP to stop vApp
-                #lsf.labstartup_sleep(120)
+                lsf.labstartup_sleep(120)
             # was lsf.sleep_seconds, but that is 5s and too short
             lsf.labstartup_sleep(30)             
 
