@@ -151,7 +151,7 @@ if 'vraurls' in lsf.config['VCFFINAL'].keys():
                 # Try to prevent excessive logging while waiting for VLP to stop vApp
                 lsf.labstartup_sleep(120)
             # was lsf.sleep_seconds, but that is 5s and too short
-            lsf.labstartup_sleep(30)             
+            lsf.labstartup_sleep(60)             
 
 for si in lsf.sis:
     connect.Disconnect(si)
