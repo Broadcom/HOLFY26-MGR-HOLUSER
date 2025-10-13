@@ -141,8 +141,8 @@ if 'vraurls' in lsf.config['VCFFINAL'].keys():
         ctr = 0
         while not lsf.test_url(url[0], pattern=url[1], timeout=2, verbose=False):
             ctr += 1
-            lsf.write_output(f'Sleeping and will try again... {ctr} / 20')
-            if ctr == 20:
+            lsf.write_output(f'Sleeping and will try again... {ctr} / 30')
+            if ctr == 30:
                 lsf.write_output(f'Automation URLS failed to come up, failng...')
                 # TODO: Add watchvcfa.sh and expired password fix commands here to attempt reboot and K8s pod fixes
                 #lsf.run_command("/home/holuser/hol/Tools/watchvcfa.sh")
