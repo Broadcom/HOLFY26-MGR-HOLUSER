@@ -32,7 +32,8 @@ ssh_with_fallback() {
     
     # Fall back to sshpass if key auth fails
     if [[ -f "${CREDS_FILE}" ]]; then
-        local password=$(cat "${CREDS_FILE}")
+        local password
+        password=$(cat "${CREDS_FILE}")
         /usr/bin/sshpass -p "${password}" ssh "${user}@${host}" "${cmd[@]}"
     else
         echo "ERROR: Key-based authentication failed and credentials file not found at ${CREDS_FILE}"
