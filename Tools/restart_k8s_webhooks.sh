@@ -74,17 +74,17 @@ echo ""
 # Execute the kubectl commands to restart webhooks
 # The following two must be restarted for HOL-2636 Workload Supervisor cluster when the certificates have expired
 # the restart triggers the regenerationo fthe certificates, allowing for vm creation in the lab
+# Execute the kubectl commands to restart webhooks
 echo "=========================================="
 echo "Restarting storage-quota-webhook..."
 echo "=========================================="
-ssh_with_fallback "root" "${nodeIP}" "kubectl -n kube-system rollout restart deploy storage-quota-webhook"
+/usr/bin/sshpass -p "${nodePwd}" ssh "root@${nodeIP}" "kubectl -n kube-system rollout restart deploy storage-quota-webhook"
 
 echo ""
 echo "=========================================="
 echo "Restarting cns-storage-quota-extension..."
 echo "=========================================="
-
-ssh_with_fallback "root" "${nodeIP}" "kubectl -n kube-system rollout restart deploy cns-storage-quota-extension"
+/usr/bin/sshpass -p "${nodePwd}" ssh "root@${nodeIP}" "kubectl -n kube-system rollout restart deploy cns-storage-quota-extension"
 
 echo ""
 echo "=========================================="
