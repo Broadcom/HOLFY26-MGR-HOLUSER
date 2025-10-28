@@ -134,6 +134,7 @@ if 'vraurls' in lsf.config['VCFFINAL'].keys():
     lsf.write_vpodprogress('Aria Automation URL Checks', 'GOOD-8', color=color)
     lsf.write_output('Aria Automation URL Checks...')
     # Check VCF Automation ssh for password expiration and fix if expired
+    lsf.write_output('Fixing expired automation pw if necessary...')
     lsf.run_command("/home/holuser/hol/Tools/vcfapwcheck.sh")
 
     for entry in vraurls:
