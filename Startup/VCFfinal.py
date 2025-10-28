@@ -133,6 +133,9 @@ if 'vraurls' in lsf.config['VCFFINAL'].keys():
     vraurls = lsf.config.get('VCFFINAL', 'vraurls').split('\n')
     lsf.write_vpodprogress('Aria Automation URL Checks', 'GOOD-8', color=color)
     lsf.write_output('Aria Automation URL Checks...')
+    # Check VCF Automation ssh for password expiration and fix if expired
+    lsf.run_command("/home/holuser/hol/Tools/vcfapwcheck.sh")
+
     for entry in vraurls:
         url = entry.split(',')
         lsf.write_output(f'Testing {url[0]} for pattern {url[1]}')
@@ -144,7 +147,7 @@ if 'vraurls' in lsf.config['VCFFINAL'].keys():
             lsf.write_output(f'Sleeping and will try again... {ctr} / 30')
             if ctr == 30:
                 lsf.write_output(f'Automation URLS failed to come up, failng...')
-                # TODO: Add watchvcfa.sh and expired password fix commands here to attempt reboot and K8s pod fixes
+                # TODO: update watchvcfa.sh - As of this comment, it fixes expired password and has an attempted attempt reboot and K8s pod fixes - but they don't currently work
                 #lsf.run_command("/home/holuser/hol/Tools/watchvcfa.sh")
                 lsf.labfail('fail: Automation URLS not accessible')
                 exit(1)
