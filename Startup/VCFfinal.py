@@ -89,7 +89,7 @@ if 'tanzucreate' in lsf.config['VCFFINAL'].keys():
     result = lsf.ssh(tcscript, f'{tcaccount}@{tchost}', lsf.password, logfile=lsf.logfile)
     lsf.write_output(result.stdout)
 
-######Start Aria Automtation VMs
+######Start Aria Automation VMs
 # Could we start this during the 10 minutes we're waiting for Tanzu?
 vravms = []
 if 'vravms' in lsf.config['VCFFINAL'].keys():
@@ -134,7 +134,7 @@ if 'vraurls' in lsf.config['VCFFINAL'].keys():
     lsf.write_vpodprogress('Aria Automation URL Checks', 'GOOD-8', color=color)
     lsf.write_output('Aria Automation URL Checks...')
     # Check VCF Automation ssh for password expiration and fix if expired
-    lsf.write_output('Fixing expired automation pw if necessary...')
+    lsf.write_output('Fixing expired automation pw if necessary... operation takes approximately 1m 23s')
     lsf.run_command("/home/holuser/hol/Tools/vcfapwcheck.sh")
 
     for entry in vraurls:
@@ -145,16 +145,18 @@ if 'vraurls' in lsf.config['VCFFINAL'].keys():
         ctr = 0
         while not lsf.test_url(url[0], pattern=url[1], timeout=2, verbose=False):
             ctr += 1
-            lsf.write_output(f'Sleeping and will try again... {ctr} / 30')
+            # URL should be reached in under 10m, try some remediation using the watchvcfa script
+            if ctr == 10:
+                lsf.write_output(f'Automation URLS failed to come up in 10m, trying watchvcfa script...')
+                lsf.run_command("/home/holuser/hol/Tools/watchvcfa.sh")
+            # If the URL is still unreachable after 30m, even with remediation attempt, then fail the pod
             if ctr == 30:
-                lsf.write_output(f'Automation URLS failed to come up, failng...')
-                # TODO: update watchvcfa.sh - As of this comment, it fixes expired password and has an attempted attempt reboot and K8s pod fixes - but they don't currently work
-                #lsf.run_command("/home/holuser/hol/Tools/watchvcfa.sh")
-                lsf.labfail('fail: Automation URLS not accessible')
+                lsf.labfail('fail: Automation URLS not accessible after 30m, should be reached in under 8m')
                 exit(1)
                 # Try to prevent excessive logging while waiting for VLP to stop vApp
                 lsf.labstartup_sleep(120)
-            # was lsf.sleep_seconds, but that is 5s and too short
+            # Wait for 1m before retrying
+            lsf.write_output(f'Sleeping and will try again... {ctr} / 10')
             lsf.labstartup_sleep(60)             
 
 for si in lsf.sis:
