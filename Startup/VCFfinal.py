@@ -145,8 +145,8 @@ if 'vraurls' in lsf.config['VCFFINAL'].keys():
         ctr = 0
         while not lsf.test_url(url[0], pattern=url[1], timeout=2, verbose=False):
             ctr += 1
-            # URL should be reached in under 10m, try some remediation using the watchvcfa script
-            if ctr == 10:
+            # Run the watchvcfa script to make sure the seaweedfs-master-0 pod is not stale
+            if ctr == 1:
                 lsf.write_output(f'Automation URLS failed to come up in 10m, trying watchvcfa script...')
                 lsf.run_command("/home/holuser/hol/Tools/watchvcfa.sh")
             # If the URL is still unreachable after 30m, even with remediation attempt, then fail the pod
