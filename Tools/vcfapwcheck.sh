@@ -13,7 +13,7 @@ HOST="vmware-system-user@10.1.1.71" # Replace with your SSH username and host
 # The 'StrictHostKeyChecking=no' and 'UserKnownHostsFile=/dev/null' options
 # are used to avoid host key confirmation prompts, which can interfere with detection.
 SSH_OUTPUT=$(sshpass -f /home/holuser/creds.txt ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o PreferredAuthentications=password -o PubkeyAuthentication=no "$HOST" 2>&1)
-
+# TODO: Add handler for ssh Exit 1 -- this requires a reboot of the auto-a host
 # Check if the output contains keywords indicating a password reset prompt.
 # Common phrases include "old password:", "new password:", "You are required to change your password", etc.
 if echo "$SSH_OUTPUT" | grep -qE "old password:|new password:|You are required to change your password|Permission denied"; then
