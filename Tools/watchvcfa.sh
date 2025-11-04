@@ -1,6 +1,7 @@
 #!/bin/bash
 #REBOOTS=0
 SEAWEEDPOD="."
+CONATAINERDREADY="."
 #POSTGRES="."
 #CCSK3SAPP="."
 LOGFILE="/home/holuser/hol/labstartup.log"
@@ -10,9 +11,15 @@ echo "$(date +%T) -------------WATCHVCFA RUN START-------------" >> "${LOGFILE}"
 echo "$(date +%T)-> VCFA Watcher started"  >> "${LOGFILE}"
 
 # while [[ $REBOOTS -lt 3 || "$POSTGRES" != "2/2" ]]; do
+  CNT=0
   while ! $(sshpass -f /home/holuser/creds.txt ssh -q -o ConnectTimeout=5 "vmware-system-user@10.1.1.71" exit); do
     sleep 30
 	  echo "$(date +%T)-> Waiting for VCFA to come Online" >> "${LOGFILE}"
+    ((CNT++))
+    if [ $CNT -eq 10 ]; then
+      echo "$(date +%T)-> VCFA Online check check tried 10 times (5m), continuing..." >> "${LOGFILE}"
+      break
+    fi
   done
   # echo "$(date +%T)-> VCFA online, reboot# $REBOOTS" >> "${LOGFILE}" 
   # seaweedfs-master-0 is stale in the captured vAppTemplate. When Automation starts, sometimes this pod is NOT
@@ -38,6 +45,26 @@ echo "$(date +%T)-> VCFA Watcher started"  >> "${LOGFILE}"
       break
     fi
   done
+  ###### Containerd check/fix ######
+  echo "$(date +%T)-> Checking containerd on VCFA for Ready,SchedulingDisabled..." >> "${LOGFILE}"
+  CNT=0
+  while [[ "$CONATAINERDREADY" != "" ]]; do
+    ((CNT++))
+    CONATAINERDREADY=$(sshpass -f /home/holuser/creds.txt ssh vmware-system-user@10.1.1.71 "sudo -i bash -c 'kubectl -s https://10.1.1.71:6443 get nodes '" | grep "Ready,SchedulingDisabled" | awk '{print $2}')
+   
+    if [ "$CONATAINERDREADY" == "Ready,SchedulingDisabled" ]; then
+      echo "$(date +%T)-> Stale containerd found, restarting..." >> "${LOGFILE}"
+      sshpass -f /home/holuser/creds.txt ssh vmware-system-user@10.1.1.71 "sudo -i bash -c 'systemctl restart containerd'" >> "${LOGFILE}"
+      sleep 5
+      sshpass -f /home/holuser/creds.txt ssh vmware-system-user@10.1.1.71 "sudo -i bash -c 'kubectl -s https://10.1.1.71:6443 get nodes'" >> "${LOGFILE}"
+    fi
+    sleep 5
+    if [ $CNT -eq 3 ]; then
+      echo "$(date +%T)-> containerd check tried 3 times, continuing..." >> "${LOGFILE}"
+      break
+    fi
+  done
+
   # CNT=0
   # while [[ "$POSTGRES" != "2/2" ]]; do 
   #   sleep 60;
