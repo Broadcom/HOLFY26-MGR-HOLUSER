@@ -37,6 +37,10 @@ echo "$(date +%T)-> VCFA Watcher started"  >> "${LOGFILE}"
       sshpass -f /home/holuser/creds.txt ssh vmware-system-user@10.1.1.71 "sudo -i bash -c 'kubectl -s https://10.1.1.71:6443 get nodes'" >> "${LOGFILE}"
     fi
     sleep 5
+    if [ $CNT -eq 2 ]; then
+      NODENAME=$(sshpass -f /home/holuser/creds.txt ssh vmware-system-user@10.1.1.71 "sudo -i bash -c 'kubectl -s https://10.1.1.71:6443 get nodes '" | grep "Ready,SchedulingDisabled" | awk '{print $1}')
+      sshpass -f /home/holuser/creds.txt ssh vmware-system-user@10.1.1.71 "sudo -i bash -c 'kubectl -s https://10.1.1.71:6443 uncordon ${NODENAME}'"
+    fi
     if [ $CNT -eq 3 ]; then
       echo "$(date +%T)-> containerd check tried 3 times, continuing..." >> "${LOGFILE}"
       break
