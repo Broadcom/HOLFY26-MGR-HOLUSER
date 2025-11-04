@@ -22,6 +22,47 @@ echo "$(date +%T)-> VCFA Watcher started"  >> "${LOGFILE}"
     fi
   done
   # echo "$(date +%T)-> VCFA online, reboot# $REBOOTS" >> "${LOGFILE}" 
+
+  ###### Containerd check/fix ######
+  echo "$(date +%T)-> Checking containerd on VCFA for Ready,SchedulingDisabled..." >> "${LOGFILE}"
+  CNT=0
+  while [[ "$CONATAINERDREADY" != "" ]]; do
+    ((CNT++))
+    CONATAINERDREADY=$(sshpass -f /home/holuser/creds.txt ssh vmware-system-user@10.1.1.71 "sudo -i bash -c 'kubectl -s https://10.1.1.71:6443 get nodes '" | grep "Ready,SchedulingDisabled" | awk '{print $2}')
+   
+    if [ "$CONATAINERDREADY" == "Ready,SchedulingDisabled" ]; then
+      echo "$(date +%T)-> Stale containerd found, restarting..." >> "${LOGFILE}"
+      sshpass -f /home/holuser/creds.txt ssh vmware-system-user@10.1.1.71 "sudo -i bash -c 'systemctl restart containerd'" >> "${LOGFILE}"
+      sleep 5
+      sshpass -f /home/holuser/creds.txt ssh vmware-system-user@10.1.1.71 "sudo -i bash -c 'kubectl -s https://10.1.1.71:6443 get nodes'" >> "${LOGFILE}"
+    fi
+    sleep 5
+    if [ $CNT -eq 3 ]; then
+      echo "$(date +%T)-> containerd check tried 3 times, continuing..." >> "${LOGFILE}"
+      break
+    fi
+  done
+
+###### kube-scheduler check/fix ######
+  echo "$(date +%T)-> Checking kube-scheduler on VCFA for 0/1 Running..." >> "${LOGFILE}"
+  CNT=0
+  while [[ "$KUBESCHEDULER" != "" ]]; do
+    ((CNT++))
+    sleep 30
+    KUBESCHEDULER=$(sshpass -f /home/holuser/creds.txt ssh vmware-system-user@10.1.1.71 "sudo -i bash -c 'kubectl -n kube-system -s https://10.1.1.71:6443 get pods '" | grep "kube-scheduler" | grep "0/1" | awk '{print $2}')
+   
+    if [ "$KUBESCHEDULER" == "0/1" ]; then
+      echo "$(date +%T)-> Stale kube-scheduler found, restarting..." >> "${LOGFILE}"
+      sshpass -f /home/holuser/creds.txt ssh vmware-system-user@10.1.1.71 "sudo -i bash -c 'systemctl restart containerd'" >> "${LOGFILE}"
+      sleep 120
+      sshpass -f /home/holuser/creds.txt ssh vmware-system-user@10.1.1.71 "sudo -i bash -c 'kubectl -n kube-system -s https://10.1.1.71:6443 get pods'" | grep "kube-scheduler" >> "${LOGFILE}"
+    fi
+    if [ $CNT -eq 3 ]; then
+      echo "$(date +%T)-> kube-scheduler check tried 3 times, continuing..." >> "${LOGFILE}"
+      break
+    fi
+  done
+
   # seaweedfs-master-0 is stale in the captured vAppTemplate. When Automation starts, sometimes this pod is NOT
   #   cleaned up properly, resulting in the prevention of many other pods failint go start.
   #  Check this pod and delete it if it is old:
@@ -45,25 +86,7 @@ echo "$(date +%T)-> VCFA Watcher started"  >> "${LOGFILE}"
       break
     fi
   done
-  ###### Containerd check/fix ######
-  echo "$(date +%T)-> Checking containerd on VCFA for Ready,SchedulingDisabled..." >> "${LOGFILE}"
-  CNT=0
-  while [[ "$CONATAINERDREADY" != "" ]]; do
-    ((CNT++))
-    CONATAINERDREADY=$(sshpass -f /home/holuser/creds.txt ssh vmware-system-user@10.1.1.71 "sudo -i bash -c 'kubectl -s https://10.1.1.71:6443 get nodes '" | grep "Ready,SchedulingDisabled" | awk '{print $2}')
-   
-    if [ "$CONATAINERDREADY" == "Ready,SchedulingDisabled" ]; then
-      echo "$(date +%T)-> Stale containerd found, restarting..." >> "${LOGFILE}"
-      sshpass -f /home/holuser/creds.txt ssh vmware-system-user@10.1.1.71 "sudo -i bash -c 'systemctl restart containerd'" >> "${LOGFILE}"
-      sleep 5
-      sshpass -f /home/holuser/creds.txt ssh vmware-system-user@10.1.1.71 "sudo -i bash -c 'kubectl -s https://10.1.1.71:6443 get nodes'" >> "${LOGFILE}"
-    fi
-    sleep 5
-    if [ $CNT -eq 3 ]; then
-      echo "$(date +%T)-> containerd check tried 3 times, continuing..." >> "${LOGFILE}"
-      break
-    fi
-  done
+  
 
   # CNT=0
   # while [[ "$POSTGRES" != "2/2" ]]; do 
