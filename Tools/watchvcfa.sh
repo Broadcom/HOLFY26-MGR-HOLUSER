@@ -2,6 +2,7 @@
 #REBOOTS=0
 SEAWEEDPOD="."
 CONATAINERDREADY="."
+KUBESCHEDULER="."
 #POSTGRES="."
 #CCSK3SAPP="."
 LOGFILE="/home/holuser/hol/labstartup.log"
