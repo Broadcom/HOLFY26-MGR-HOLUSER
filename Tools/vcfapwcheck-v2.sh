@@ -34,23 +34,6 @@ function retry {
     fi
 }
 
-function check_pw {
-  # Attempt to connect via SSH in batch mode (no interactive prompts for password)
-  # and capture the output.
-  # The 'StrictHostKeyChecking=no' and 'UserKnownHostsFile=/dev/null' options
-  # are used to avoid host key confirmation prompts, which can interfere with detection.
-  SSH_OUTPUT=$(sshpass -f /home/holuser/creds.txt ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o PreferredAuthentications=password -o PubkeyAuthentication=no "$HOST" 2>&1)
-  # TODO: Add handler for ssh Exit 1 -- this requires a reboot of the auto-a host. Wait 180s then try above command again
-  # Check if the output contains keywords indicating a password reset prompt.
-  # Common phrases include "old password:", "new password:", "You are required to change your password", etc.
-  if echo "$SSH_OUTPUT" | grep -qE "old password:|new password:|You are required to change your password|Permission denied"; then
-    echo "Password reset prompt detected on $HOST."
-    /home/holuser/hol/Tools/vcfapass.sh $(cat /home/holuser/creds.txt) $(/home/holuser/hol/Tools/holpwgen.sh)
-  else
-    echo "No password reset prompt detected on $HOST (or SSH connection failed for other reasons)."
-  fi
-}
-
 # Run the check_pw script until is succeeds or until 3m has passed
 # By the time this script is called, Automation should be accessible via SSH
-retry check_pw
+retry /home/holuser/hol/Tools/vcfapass-v2.sh $(cat /home/holuser/creds.txt) $(/home/holuser/hol/Tools/holpwgen.sh)
