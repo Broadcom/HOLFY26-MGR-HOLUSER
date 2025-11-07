@@ -1,8 +1,14 @@
 #!/usr/bin/expect -f
+
 # Author: Burke Azbill
 # Version: 2.0
 # Date: November, 2025
+# General Usage: vcfapass.sh 'Old_PASSWORD' 'New_PASSWORD'
 # HOL Usage: vcfapass.sh $(cat ~/creds.txt) $(/home/holuser/hol/Tools/holpwgen.sh)
+# Purpose: Identify when a lab instance of VCF Automation has an expired vmware-system-user password
+#          Set a new password to get past the expiration prompt, then become root and set the password
+#          back to the documented lab password.
+
 set timeout 20
 set old_password [lindex $argv 0]
 set new_password [lindex $argv 1]
@@ -33,7 +39,7 @@ expect {
     send "$old_password\r"
     expect "Retype new password:"
     send "$old_password\r"
-    expect "vmware-system-user@auto-a-8fpl5 " { exit 0}
+    expect "vmware-system-user@auto-a-8fpl5 " { exit 0 }
   }
 
   # OUTCOME 2: Succesful login (no password change needed)
