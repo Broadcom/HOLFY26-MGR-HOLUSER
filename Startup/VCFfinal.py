@@ -134,7 +134,7 @@ if 'vraurls' in lsf.config['VCFFINAL'].keys():
     lsf.write_vpodprogress('Aria Automation URL Checks', 'GOOD-8', color=color)
     lsf.write_output('Aria Automation URL Checks...')
     # Check VCF Automation ssh for password expiration and fix if expired
-    lsf.write_output('Fixing expired automation pw if necessary... operation takes approximately 1m 23s')
+    lsf.write_output('Fixing expired automation pw if necessary...')
     lsf.run_command("/home/holuser/hol/Tools/vcfapwcheck.sh")
     # Run the watchvcfa script to make sure the seaweedfs-master-0 pod is not stale
     lsf.run_command("/home/holuser/hol/Tools/watchvcfa.sh")
