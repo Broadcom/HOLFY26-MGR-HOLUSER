@@ -32,4 +32,4 @@ function retry {
 }
 
 # By the time this script is called, Automation should be accessible via SSH
-retry /home/holuser/hol/Tools/vcfapass-v2.sh $(cat /home/holuser/creds.txt) $(/home/holuser/hol/Tools/holpwgen.sh)
+retry /home/holuser/hol/Tools/vcfapass.sh $(cat /home/holuser/creds.txt) $(/home/holuser/hol/Tools/holpwgen.sh)
