@@ -291,9 +291,10 @@ if [ -f "${vpodgitdir}"/config.ini ];then
 fi
 
 for file in agent.*; do
-    if [ -f "$file" ]; then
-        cp "$file"  ${holroot}/
-    fi
+   if [ -f "$file" ]; then
+      echo "Copying agent test file $file to /hol" >> ${logfile}
+      cp "$file"  ${holroot}/
+   fi
 done
 
 # push the default router files for proxy filtering and iptables
