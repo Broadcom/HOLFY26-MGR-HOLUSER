@@ -166,6 +166,13 @@ else
    exit 1
 fi
 
+for file in agent.*; do
+   if [ -f "$file" ]; then
+      echo "Copying agent test file $file to /hol" >> ${logfile}
+      cp "$file"  ${holroot}/
+   fi
+done
+
 # get the vPod_SKU from $configini removing Windows carriage return if present
 vPod_SKU=$(grep vPod_SKU /tmp/vPod.txt | grep -v \# | cut -f2 -d= | sed 's/\r$//' | xargs)
 # this is needed for the VLPagent.sh script and for AutoCheck
@@ -289,13 +296,6 @@ fi
 if [ -f "${vpodgitdir}"/config.ini ];then
    cp "${vpodgitdir}"/config.ini ${configini}
 fi
-
-for file in agent.*; do
-   if [ -f "$file" ]; then
-      echo "Copying agent test file $file to /hol" >> ${logfile}
-      cp "$file"  ${holroot}/
-   fi
-done
 
 # push the default router files for proxy filtering and iptables
 if [ "${labtype}" = "HOL" ];then
