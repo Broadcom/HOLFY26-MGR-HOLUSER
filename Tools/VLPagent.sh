@@ -23,14 +23,12 @@ if [ "${vPod_SKU}" = "HOL-2535" ];then
    vlpagentversion='1.0.7'  # could use a different version in this case
    # overwrite logfile on first write
    echo "Using special VLP Agent version ${vlpagentversion} for ${vPod_SKU}" > $logfile
-else
-   vlpagentversion='1.0.7'
+if [ "${vPod_SKU}" = "HOL-2608" ];then
+   vlpagentversion='1.0.9'
    # overwrite logfile on first write
    echo "Using special VLP Agent version ${vlpagentversion} for ${vPod_SKU}" > $logfile
-fi
-
-if [ -f /lmchol/hol/agent.109 ];then
-   vlpagentversion='1.0.9'
+else
+   vlpagentversion='1.0.7'
    # overwrite logfile on first write
    echo "Using special VLP Agent version ${vlpagentversion} for ${vPod_SKU}" > $logfile
 fi
