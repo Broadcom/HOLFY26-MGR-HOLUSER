@@ -29,6 +29,11 @@ else
    echo "Using special VLP Agent version ${vlpagentversion} for ${vPod_SKU}" > $logfile
 fi
 
+if [ -f /lmchol/hol/agent.109 ];then
+   vlpagentversion='1.0.9'
+   # overwrite logfile on first write
+   echo "Using special VLP Agent version ${vlpagentversion} for ${vPod_SKU}" > $logfile
+fi
 
 gitdrive=/vpodrepo
 prepopstart=/tmp/prepop.txt
