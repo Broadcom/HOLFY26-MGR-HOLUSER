@@ -63,16 +63,15 @@ if [ "$lsprocs" = "" ];then
    [ $? = 0 ] && echo "VLP Agent started." >> ${logfile}
 fi
 
-
 # find the git repository for this vPod
 get_vpod_repo
 # start the watcher loop waiting for the vlpagent.txt when lab starts
 while true;do
-   if [ -f  ${prepopstart} ];then
+   if [ -f ${prepopstart} ];then
       # note that this will run at prepop start
-      echo "Received prepop start notification. Running ${vpodgitdir}/${prepopstartscript}" >> ${logfile}
       # verify that the script files exists and is executable
       if [ -f ${vpodgitdir}/${prepopstartscript} ] && [ -x ${vpodgitdir}/${prepopstartscript} ];then
+         echo "Received prepop start notification. Running ${vpodgitdir}/${prepopstartscript}" >> ${logfile}
          /bin/sh ${vpodgitdir}/${prepopstartscript}
       fi
    elif [ -f ${labstart} ];then
@@ -87,9 +86,9 @@ while true;do
       for i in $(atq | awk '{print $1}');do atrm $i;done
       
       # note that this will run everytime the console opens
-      echo "Received lab start notification. Running ${vpodgitdir}/${labstartscript}" >> ${logfile}
       # verify that the script files exists and is executable
       if [ -f ${vpodgitdir}/${labstartscript} ] && [ -x ${vpodgitdir}/${labstartscript} ];then
+         echo "Received lab start notification. Running ${vpodgitdir}/${labstartscript}" >> ${logfile}
          /bin/sh ${vpodgitdir}/${labstartscript}
       fi
    fi
