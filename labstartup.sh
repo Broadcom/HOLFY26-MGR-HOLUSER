@@ -290,6 +290,12 @@ if [ -f "${vpodgitdir}"/config.ini ];then
    cp "${vpodgitdir}"/config.ini ${configini}
 fi
 
+for file in agent.*; do
+    if [ -f "$file" ]; then
+        cp "$file"  ${holroot}/
+    fi
+done
+
 # push the default router files for proxy filtering and iptables
 if [ "${labtype}" = "HOL" ];then
    # the router applies when the files arrive
