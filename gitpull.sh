@@ -8,7 +8,8 @@
 
 # initialize the logfile
 logfile='/tmp/labstartupsh.log'
-startupstatus='/lmchol/hol/startup_status.txt'
+statusdir='/lmchol/hol'
+startupstatus="${statusdir}/startup_status.txt"
 gitproject='HOLUSER'
 echo "Initializing log file" > ${logfile}
 
@@ -36,7 +37,7 @@ while true;do
       if [ $? = 0 ];then
          echo "The git project ${gitproject} does not exist." >> ${logfile}
          if [ ! -f $startupstatus ];then
-            mkdir -p $startupstatus
+            mkdir -p $statusdir
          fi
          echo "FAIL - No GIT Project" > $startupstatus
          exit 1
