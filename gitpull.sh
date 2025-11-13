@@ -1,5 +1,5 @@
 #! /bin/bash
-# version 1.5 - 13-MNovy 2025
+# version 1.5 - 2025-11-13
 
 # the only job of this script is to do the initial Core Team git pull
 
@@ -9,6 +9,7 @@
 # initialize the logfile
 logfile='/tmp/labstartupsh.log'
 startupstatus='/lmchol/hol/startup_status.txt'
+gitproject='HOLUSER'
 echo "Initializing log file" > ${logfile}
 
 cd /home/holuser/hol || exit
