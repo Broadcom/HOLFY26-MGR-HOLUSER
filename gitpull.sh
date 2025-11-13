@@ -1,19 +1,17 @@
-#! /bin/sh
-# version 1.4 - 09-May 2025
+#! /bin/bash
+# version 1.5 - 13-MNovy 2025
 
 # the only job of this script is to do the initial Core Team git pull
-# and then call the lastest versions of VLPagent.sh and labstartup.sh
 
 # because we're running as an at job, source the environment variables
 . /home/holuser/.bashrc
 
 # initialize the logfile
 logfile='/tmp/labstartupsh.log'
+startupstatus='/lmchol/hol/startup_status.txt'
 echo "Initializing log file" > ${logfile}
 
 cd /home/holuser/hol || exit
-
-hol="/home/holuser"
 
 proxyready=$(nmap -p 3128 proxy | grep open)
 while [ $? != 0 ];do
@@ -36,6 +34,9 @@ while true;do
       gitresult=$(grep 'could not be found' ${logfile})
       if [ $? = 0 ];then
          echo "The git project ${gitproject} does not exist." >> ${logfile}
+         if [ ! -f $startupstatus ];then
+            mkdir -p $startupstatus
+         fi
          echo "FAIL - No GIT Project" > $startupstatus
          exit 1
       else
