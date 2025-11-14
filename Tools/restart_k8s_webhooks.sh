@@ -103,9 +103,9 @@ echo "==========================================" >> "${LOG_FILE}"
 echo "Restarting storage-quota-webhook..." >> "${LOG_FILE}"
 echo "==========================================" >> "${LOG_FILE}"
 /usr/bin/sshpass -p "${nodePwd}" ssh "root@${nodeIP}" "kubectl -n kube-system rollout restart deploy storage-quota-webhook" >> "${LOG_FILE}"
-
+sleep 20
 echo "==========================================" >> "${LOG_FILE}"
-echo "RScaling cci replicas back up..." >> "${LOG_FILE}"
+echo "Scaling cci replicas back up to 1..." >> "${LOG_FILE}"
 echo "==========================================" >> "${LOG_FILE}"
 /usr/bin/sshpass -p "${nodePwd}" ssh "root@${nodeIP}" "kubectl -n svc-cci-ns-domain-c10 scale deployment --all --replicas=1" >> "${LOG_FILE}"
 
