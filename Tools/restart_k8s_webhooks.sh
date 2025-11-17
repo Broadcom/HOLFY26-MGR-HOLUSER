@@ -109,6 +109,16 @@ echo "Scaling cci replicas back up to 1..." >> "${LOG_FILE}"
 echo "==========================================" >> "${LOG_FILE}"
 /usr/bin/sshpass -p "${nodePwd}" ssh "root@${nodeIP}" "kubectl -n svc-cci-ns-domain-c10 scale deployment --all --replicas=1" >> "${LOG_FILE}"
 
+echo "==========================================" >> "${LOG_FILE}"
+echo "Scaling argocd replicas back up to 1..." >> "${LOG_FILE}"
+echo "==========================================" >> "${LOG_FILE}"
+/usr/bin/sshpass -p "${nodePwd}" ssh "root@${nodeIP}" "kubectl -n argocd scale deployment --all --replicas=1" >> "${LOG_FILE}"
+
+echo "==========================================" >> "${LOG_FILE}"
+echo "Scaling Harbor replicas back up to 1..." >> "${LOG_FILE}"
+echo "==========================================" >> "${LOG_FILE}"
+/usr/bin/sshpass -p "${nodePwd}" ssh "root@${nodeIP}" "kubectl -n svc-harbor-ns-domain-c10 scale sts --all --replicas=1 && kubectl -n svc-harbor-ns-domain-c10 scale deployment --all --replicas=1" >> "${LOG_FILE}"
+
 echo ""
 echo "==========================================" >> "${LOG_FILE}"
 echo "✓ Successfully completed certificate resets and webhook restarts" >> "${LOG_FILE}"
