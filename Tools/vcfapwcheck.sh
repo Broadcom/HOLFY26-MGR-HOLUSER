@@ -31,7 +31,7 @@ for i in {0..10}; do
     # grep -F uses fixed string matching (safer/faster than regex)
     # 1. Check for password expiration
     if echo "$OUTPUT" | grep -F -q "You are required to change your password immediately"; then
-        echo "Password has expired"
+        echo "Password has expired for user $USER on host $HOST, launching password reset script..."
         /home/holuser/hol/Tools/vcfapass.sh $(cat /home/holuser/creds.txt) $(/home/holuser/hol/Tools/holpwgen.sh)
         exit 0
     fi
@@ -40,7 +40,7 @@ for i in {0..10}; do
     #    Note: "Permission denied, please try again." is standard, but sometimes it's just "Permission denied".
     #    Using -F for fixed string matching on the specific message provided.
     if echo "$OUTPUT" | grep -F -q "Permission denied, please try again."; then
-        echo "Incorrect password"
+        echo "Incorrect password for user $USER on host $HOST . Unable to continue, exiting..."
         exit 1
     fi
     
@@ -53,6 +53,7 @@ for i in {0..10}; do
 
     # 3. Check for successful connection (Exit Code 0)
     if [ $RET -eq 0 ]; then
+        echo "Successful SSH connection to host $HOST detected, exiting..."
         exit 0
     fi
 
