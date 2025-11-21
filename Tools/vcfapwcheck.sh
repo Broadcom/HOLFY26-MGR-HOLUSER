@@ -63,4 +63,4 @@ for i in {0..10}; do
     fi
 done
 
-echo "$(date +"%m/%d/%Y %T") The vcfapwcheck.sh script made it to the end of the file - this shouldn't have happened! OUTPUT: $OUTPUT" | tee -a  "${LOGFILE}" >> "${CONSOLELOG}"
+echo "$(date +"%m/%d/%Y %T") The vcfapwcheck.sh script made it to the end of the file - this shouldn't have happened, maybe the host is not powered on! OUTPUT: $OUTPUT" | tee -a  "${LOGFILE}" >> "${CONSOLELOG}"
