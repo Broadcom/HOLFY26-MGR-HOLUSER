@@ -58,9 +58,9 @@ for i in {0..10}; do
 
     # If failed and retries remain, wait 30 seconds
     if [ $i -lt 10 ]; then
-        echo "$(date +"%m/%d/%Y %T") Trying SSH connection to $HOST again in 30s..." | tee -a  "${LOGFILE}" >> "${CONSOLELOG}"
+        echo "$(date +"%m/%d/%Y %T") Trying SSH connection to $HOST again in 30s... OUTPUT: $OUTPUT" | tee -a  "${LOGFILE}" >> "${CONSOLELOG}"
         sleep 30
     fi
 done
 
-echo "$(date +"%m/%d/%Y %T") The vcfapwcheck.sh script made it to the end of the file - this shouldn't have happened!" | tee -a  "${LOGFILE}" >> "${CONSOLELOG}"
+echo "$(date +"%m/%d/%Y %T") The vcfapwcheck.sh script made it to the end of the file - this shouldn't have happened! OUTPUT: $OUTPUT" | tee -a  "${LOGFILE}" >> "${CONSOLELOG}"
