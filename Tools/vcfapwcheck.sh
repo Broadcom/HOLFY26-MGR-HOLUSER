@@ -9,10 +9,10 @@
 # Replace these with your actual values or pass them as arguments
 HOST="10.1.1.71"
 USER="vmware-system-user"
-# This file was written to be called by the lsfunctions.py function run_command() which outputs logs to labstartup.log
-# If running standalone, you can uncomment the following line and set the LOGFILE to the path of the log file.
-# When doing so, be sure to add >> $LOGFILE to the end of the echo statements.
-# LOGFILE="/home/holuser/hol/labstartup.log"
+# For some reason, outputing to LOGFILE only shows up in the manager log, so attempting to log to both files...
+LOGFILE="/home/holuser/hol/labstartup.log"
+CONSOLELOG="/lmchol/hol/labstartup.log"
+
 
 # Loop for 7 total attempts (1 Initial + 6 Retries)
 for i in {0..10}; do
@@ -31,7 +31,7 @@ for i in {0..10}; do
     # grep -F uses fixed string matching (safer/faster than regex)
     # 1. Check for password expiration
     if echo "$OUTPUT" | grep -F -q "You are required to change your password immediately"; then
-        echo "Password has expired for user $USER on host $HOST, launching password reset script..."
+        echo "$(date +"%m/%d/%Y %T") Password has expired for user $USER on host $HOST, launching password reset script..." | tee -a  "${LOGFILE}" >> "${CONSOLELOG}"
         /home/holuser/hol/Tools/vcfapass.sh $(cat /home/holuser/creds.txt) $(/home/holuser/hol/Tools/holpwgen.sh)
         exit 0
     fi
@@ -40,25 +40,26 @@ for i in {0..10}; do
     #    Note: "Permission denied, please try again." is standard, but sometimes it's just "Permission denied".
     #    Using -F for fixed string matching on the specific message provided.
     if echo "$OUTPUT" | grep -F -q "Permission denied, please try again."; then
-        echo "Incorrect password for user $USER on host $HOST . Unable to continue, exiting..."
+        echo "$(date +"%m/%d/%Y %T") Incorrect password for user $USER on host $HOST . Unable to continue, exiting..." | tee -a  "${LOGFILE}" >> "${CONSOLELOG}"
         exit 1
     fi
     
     # Fallback check for standard "Permission denied" (publickey,password,keyboard-interactive) 
     # which might occur if password auth fails entirely or after max attempts.
     if echo "$OUTPUT" | grep -F -q "Permission denied ("; then
-        echo "Authentication failed (Incorrect password or method)"
+        echo "$(date +"%m/%d/%Y %T") Authentication failed (Incorrect password or method)" | tee -a  "${LOGFILE}" >> "${CONSOLELOG}"
         exit 1
     fi
 
     # 3. Check for successful connection (Exit Code 0)
     if [ $RET -eq 0 ]; then
-        echo "Successful SSH connection to host $HOST detected, exiting..."
+        echo "$(date +"%m/%d/%Y %T") Successful SSH connection to host $HOST detected, exiting..." | tee -a  "${LOGFILE}" >> "${CONSOLELOG}"
         exit 0
     fi
 
     # If failed and retries remain, wait 30 seconds
     if [ $i -lt 10 ]; then
+        echo "$(date +"%m/%d/%Y %T") Trying SSH connection to $HOST again in 30s..." | tee -a  "${LOGFILE}" >> "${CONSOLELOG}"
         sleep 30
     fi
 done
