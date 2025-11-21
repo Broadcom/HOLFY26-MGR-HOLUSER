@@ -4,7 +4,7 @@
 # Purpose: Check VCF Automation appliance to see if the password has expired. If so, use expect script to reset the password
 # Version: 1.0 Date: October, 2025
 # Version: 1.1 Date: November, 2025 - re-wrote to account for failed connections, incorrect password, and successful connection.
-
+# Version: 1.2 Date: November, 2025 - Updated logging
 # Configuration
 # Replace these with your actual values or pass them as arguments
 HOST="10.1.1.71"
@@ -13,8 +13,7 @@ USER="vmware-system-user"
 LOGFILE="/home/holuser/hol/labstartup.log"
 CONSOLELOG="/lmchol/hol/labstartup.log"
 
-
-# Loop for 7 total attempts (1 Initial + 6 Retries)
+# Loop for 10 total attempts (1 Initial + 9 Retries) for a total of 5 minutes
 for i in {0..10}; do
     # Attempt SSH connection using sshpass
     # -o StrictHostKeyChecking=no: Auto-accept host keys
@@ -63,3 +62,5 @@ for i in {0..10}; do
         sleep 30
     fi
 done
+
+echo "$(date +"%m/%d/%Y %T") The vcfapwcheck.sh script made it to the end of the file - this shouldn't have happened!" | tee -a  "${LOGFILE}" >> "${CONSOLELOG}"
