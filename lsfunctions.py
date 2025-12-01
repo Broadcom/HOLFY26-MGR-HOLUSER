@@ -50,6 +50,8 @@ proxy = 'proxy.site-a.vcf.lab'
 # write to both holroot and mcholroot from the Manager
 logfile = 'labstartup.log'
 
+socket.setdefaulttimeout(300)
+
 # LMC or WMC
 LMC = False
 WMC = False
