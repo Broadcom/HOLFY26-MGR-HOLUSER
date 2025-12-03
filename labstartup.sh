@@ -24,7 +24,7 @@ git_pull() {
         gitresult=$(grep 'could not be found' ${logfile})
         if [ $? = 0 ];then
            echo "The git project ${gitproject} does not exist." >> ${logfile}
-           echo "FAIL - No GIT Project" > $startupstatus
+           echo "FAIL - No GIT Project" > "$startupstatus"
            exit 1
         else
            echo "Could not complete git pull. Will try again." >> ${logfile}
@@ -41,7 +41,7 @@ git_clone() {
    while true;do
       if [ "$ctr" -gt 30 ];then
          echo "Could not perform git clone. failing vpod." >> ${logfile}
-         echo "FAIL - Could not clone GIT Project" > $startupstatus
+         echo "FAIL - Could not clone GIT Project" > "$startupstatus"
          exit 1
       fi
       echo "Performing git clone for repo ${vpodgit}" >> ${logfile}
@@ -66,8 +66,7 @@ git_clone() {
 runlabstartup() {
    # start the Python labstartup.py script with optional "labcheck" argument
    # we only want one labstartup.py running
-   lsprocs=$(ps -ef | grep labstartup.py | grep -v grep)
-   if [ "$lsprocs" = "" ];then
+   if ! pgrep -f "labstartup.py"; then
       echo "Starting ${holroot}/labstartup.py $1" >> ${logfile}
       # -u unbuffered output
       /usr/bin/python3 -u ${holroot}/labstartup.py "$1" >> ${logfile} 2>&1 &
@@ -250,10 +249,6 @@ gitproject="https://github.com/Broadcom/HOL-${year}${index}.git"
 
 # this is the 2nd git pull for lab-specific captain updates
 [ "$labtype" = "HOL" ] && echo "Ready to pull updates for ${vPod_SKU} from HOL gitlab ${gitproject}." >> ${logfile}
-
-prod=false
-holdev=$(vmtoolsd --cmd 'info-get guestinfo.ovfEnv' 2>&1 | grep -i HOL-Dev)
-[ $? = 1 ] && prod=true
 
 yearrepo="${gitdrive}/20${year}-labs"
 vpodgitdir="${yearrepo}/${year}${index}"
