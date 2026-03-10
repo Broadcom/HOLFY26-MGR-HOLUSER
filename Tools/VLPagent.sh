@@ -20,11 +20,11 @@ logfile='/tmp/VLPagentsh.log'
 vPod_SKU=$(cat /tmp/vPod_SKU.txt)
 # install this version
 if [ "${vPod_SKU}" = "HOL-2535" ];then
-   vlpagentversion='1.0.7'  # could use a different version in this case. This is an example, 2535 doesn't even use this repo copy of the script
+   vlpagentversion='1.0.10'  # could use a different version in this case. This is an example, 2535 doesn't even use this repo copy of the script
    # overwrite logfile on first write
    echo "Using special VLP Agent version ${vlpagentversion} for ${vPod_SKU}" > $logfile
-elif [ "${vPod_SKU}" = "HOL-2610" ];then
-   vlpagentversion='1.0.10'
+elif [ "${vPod_SKU}" = "HOL-2634" ];then
+   vlpagentversion='1.0.11'
    # overwrite logfile on first write
    echo "Using VLP Agent version ${vlpagentversion} for ${vPod_SKU}" > $logfile
 else
