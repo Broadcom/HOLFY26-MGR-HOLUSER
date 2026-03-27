@@ -1799,8 +1799,9 @@ def configure_sddc_manager(auth_keys_file: str, password: str,
         else:
             lsf.write_output(f'{sddcmgr}: FAILED - Could not copy Manager SSH key')
             lsf.write_output(f'{sddcmgr}:         User: {vcf_user}, Password provided: {"yes" if password else "no"}')
-            if result.stderr:
-                lsf.write_output(f'{sddcmgr}:         Error: {result.stderr.strip()[:100]}')
+            stderr_out = getattr(result, 'stderr', '') or ''
+            if stderr_out:
+                lsf.write_output(f'{sddcmgr}:         Error: {str(stderr_out).strip()[:100]}')
             success = False
     
     # Also copy LMC key if available
@@ -1824,8 +1825,9 @@ def configure_sddc_manager(auth_keys_file: str, password: str,
             lsf.write_output(f'{sddcmgr}: SUCCESS - Password expiration configured')
         else:
             lsf.write_output(f'{sddcmgr}: WARNING - Password config may have failed')
-            if result.stderr:
-                lsf.write_output(f'{sddcmgr}:         Error: {result.stderr.strip()[:100]}')
+            stderr_out = getattr(result, 'stderr', '') or ''
+            if stderr_out:
+                lsf.write_output(f'{sddcmgr}:         Error: {str(stderr_out).strip()[:100]}')
     else:
         lsf.write_output(f'{sddcmgr}: WARNING - sddcmgr.exp not found at {expect_script}')
     
@@ -1913,14 +1915,15 @@ def configure_operations_vms(auth_keys_file: str, password: str,
                 lsf.write_output(f'{opsvm}:         User: root, Password provided: {"yes" if password else "no"}')
                 lsf.write_output(f'{opsvm}:         This may indicate invalid credentials')
                 vm_success = False
-            elif 'permission denied' in str(result.stderr).lower():
+            elif 'permission denied' in str(getattr(result, 'stderr', '') or '').lower():
                 lsf.write_output(f'{opsvm}: FAILED - Permission denied (invalid credentials)')
                 lsf.write_output(f'{opsvm}:         User: root')
                 vm_success = False
             else:
                 lsf.write_output(f'{opsvm}: FAILED - chage command failed (exit code: {result.returncode})')
-                if result.stderr:
-                    lsf.write_output(f'{opsvm}:         Error: {str(result.stderr).strip()[:100]}')
+                stderr_out = getattr(result, 'stderr', '') or ''
+                if stderr_out:
+                    lsf.write_output(f'{opsvm}:         Error: {str(stderr_out).strip()[:100]}')
                 vm_success = False
             
             # Copy authorized_keys
@@ -1934,14 +1937,15 @@ def configure_operations_vms(auth_keys_file: str, password: str,
                     lsf.write_output(f'{opsvm}: SUCCESS - authorized_keys permissions set (chmod 600)')
                 else:
                     lsf.write_output(f'{opsvm}: WARNING - Failed to set permissions on authorized_keys')
-            elif result.returncode == 255 or 'permission denied' in str(result.stderr).lower():
+            elif result.returncode == 255 or 'permission denied' in str(getattr(result, 'stderr', '') or '').lower():
                 lsf.write_output(f'{opsvm}: FAILED - SCP failed (authentication error)')
                 lsf.write_output(f'{opsvm}:         User: root, Password provided: {"yes" if password else "no"}')
                 vm_success = False
             else:
                 lsf.write_output(f'{opsvm}: FAILED - SCP failed (exit code: {result.returncode})')
-                if result.stderr:
-                    lsf.write_output(f'{opsvm}:         Error: {str(result.stderr).strip()[:100]}')
+                stderr_out = getattr(result, 'stderr', '') or ''
+                if stderr_out:
+                    lsf.write_output(f'{opsvm}:         Error: {str(stderr_out).strip()[:100]}')
                 vm_success = False
             
             # Summary for this VM
@@ -2019,7 +2023,10 @@ def install_certutil(dry_run: bool = False) -> bool:
     lsf.write_output('Installing libnss3-tools package (provides certutil)...')
     
     try:
-        result = lsf.run_command('sudo apt-get update && sudo apt-get install -y libnss3-tools')
+        result = subprocess.run(
+            'sudo apt-get update && sudo apt-get install -y libnss3-tools',
+            shell=True, capture_output=True, text=True
+        )
         if result.returncode == 0:
             lsf.write_output('libnss3-tools installed successfully')
             return True
