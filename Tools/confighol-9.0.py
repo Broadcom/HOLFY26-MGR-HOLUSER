@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # confighol-9.0.py - HOLFY27 vApp HOLification Tool
-# Version 2.2 - March 2026
+# Version 2.4 - March 2026
 # Author - Burke Azbill and HOL Core Team
 #
 # Script Naming Convention:
@@ -9,6 +9,22 @@
 # require a new script version (e.g., confighol-9.5.py for VCF 9.5.x).
 #
 # CHANGELOG:
+# v2.4 - 2026-03-27:
+#   - Fully non-interactive: removed all interactive prompts (Vault skip,
+#     vCenter shell enable, NSX Manager configure, NSX Edge SSH fallback).
+#     Vault/vCenter unavailability now logs a message and auto-skips.
+#     All configuration steps proceed automatically without confirmation.
+#     --yes flag kept for backward compatibility but is now a no-op.
+# v2.3 - 2026-03-27:
+#   - Auto-rotate disable: pre-emptively clear stale resource locks and fix
+#     non-ACTIVE resource statuses via vSphere Guest Operations before
+#     attempting credential operations (prevents "resources not available"
+#     failures after lab restarts or failed prior operations)
+#   - Auto-rotate disable: retry failed disables after a second remediation
+#     pass when tasks fail due to resource unavailability
+#   - Auth token: try admin@local first, fall back to administrator@vsphere.local
+#   - Fix install_certutil() to use shell=True for apt-get command chaining
+#   - Fix AttributeError on result.stderr when lsf.ssh()/run_command() fails
 # v2.2 - 2026-03-02:
 #   - VCF Operations Fleet CA: extract from TLS chain and import to Firefox
 #   - vCenter CA: import ALL certs from download.zip (not just the first),
@@ -151,7 +167,7 @@ import lsfunctions as lsf
 # CONFIGURATION CONSTANTS
 #==============================================================================
 
-SCRIPT_VERSION = '2.2'
+SCRIPT_VERSION = '2.4'
 SCRIPT_NAME = 'confighol.py'
 
 # SSH key paths
@@ -916,22 +932,16 @@ def configure_vcenter(entry: str, auth_keys_file: str, password: str,
     
     success = True
     
-    # Step 1: Enable shell and browser support (interactive)
+    # Step 1: Enable shell and browser support
     if not skip_shell:
         if not dry_run:
-            answer = safe_input(f'Enable shell and browser support on {hostname}? (y/n): ',
-                               default='y', non_interactive=non_interactive)
-            if answer.lower().startswith('y'):
-                # Enable bash shell
-                enable_vcenter_shell(hostname, password, dry_run)
-                
-                # Configure SSH authorized_keys
-                lsf.write_output(f'{hostname}: Copying authorized_keys')
-                lsf.scp(auth_keys_file, f'root@{hostname}:{LINUX_AUTH_FILE}', password)
-                lsf.ssh(f'chmod 600 {LINUX_AUTH_FILE}', f'root@{hostname}', password)
-                
-                # Configure browser support and MOB
-                configure_vcenter_browser_support(hostname, password, dry_run)
+            enable_vcenter_shell(hostname, password, dry_run)
+
+            lsf.write_output(f'{hostname}: Copying authorized_keys')
+            lsf.scp(auth_keys_file, f'root@{hostname}:{LINUX_AUTH_FILE}', password)
+            lsf.ssh(f'chmod 600 {LINUX_AUTH_FILE}', f'root@{hostname}', password)
+
+            configure_vcenter_browser_support(hostname, password, dry_run)
         else:
             lsf.write_output(f'{hostname}: Would configure shell and browser support')
     
@@ -1392,15 +1402,11 @@ def configure_nsx_manager(hostname: str, auth_keys_file: str, password: str,
     if not enable_nsx_ssh_via_api(hostname, 'admin', password, dry_run):
         lsf.write_output(f'{hostname}: WARNING - API SSH enablement failed')
         if not dry_run:
-            lsf.write_output(f'{hostname}: Please enable SSH manually via vSphere Remote Console:')
-            lsf.write_output(f'{hostname}:   1. Login as admin')
+            lsf.write_output(f'{hostname}: API SSH enablement failed — proceeding anyway')
+            lsf.write_output(f'{hostname}: If SSH is not enabled, manual steps needed:')
+            lsf.write_output(f'{hostname}:   1. Login as admin via vSphere Remote Console')
             lsf.write_output(f'{hostname}:   2. Run: start service ssh')
             lsf.write_output(f'{hostname}:   3. Run: set service ssh start-on-boot')
-            answer = safe_input(f'{hostname}: Is SSH enabled now? (y/n): ',
-                               default='n', non_interactive=non_interactive)
-            if not answer.lower().startswith('y'):
-                lsf.write_output(f'{hostname}: Skipping configuration - SSH not enabled')
-                return False
 
     if not dry_run:
         time.sleep(3)
@@ -1703,13 +1709,6 @@ def configure_nsx_components(auth_keys_file: str, password: str,
             # Format: nsxmgr_hostname:esxhost
             parts = entry.split(':')
             nsxmgr = parts[0].strip()
-            
-            if not dry_run:
-                answer = safe_input(f'Configure NSX Manager {nsxmgr}? (y/n): ',
-                                   default='y', non_interactive=non_interactive)
-                if not answer.lower().startswith('y'):
-                    lsf.write_output(f'{nsxmgr}: Skipping')
-                    continue
             
             if not configure_nsx_manager(nsxmgr, auth_keys_file, password, dry_run,
                                          non_interactive=non_interactive):
@@ -2083,45 +2082,14 @@ def check_vault_accessible(vault_url: str = VAULT_URL,
 
 def prompt_vault_unavailable(message: str, non_interactive: bool = False) -> str:
     """
-    Prompt user for action when Vault CA is not accessible.
-    
-    Presents options to:
-    - [S]kip: Continue without importing Vault CA
-    - [R]etry: Try checking Vault again (user may have fixed it)
-    - [F]ail: Exit the script with an error
-    
+    Handle Vault CA being inaccessible by auto-skipping.
+
     :param message: Error message describing why Vault is not accessible
-    :param non_interactive: If True, auto-skip without prompting
-    :return: User's choice: 'skip', 'retry', or 'fail'
+    :param non_interactive: Ignored (kept for API compatibility). Always skips.
+    :return: Always returns 'skip'
     """
-    print('')
-    print('!' * 60)
-    print('  WARNING: Vault PKI CA Certificate Not Accessible')
-    print('!' * 60)
-    print('')
-    print(f'  {message}')
-    print('')
-    print('  The Vault root CA certificate is used to establish trust')
-    print('  for VCF component certificates in Firefox on the console VM.')
-    print('')
-    print('  Options:')
-    print('    [S]kip  - Continue without importing Vault CA')
-    print('              (Firefox will show certificate warnings)')
-    print('    [R]etry - Check Vault again (if you have fixed the issue)')
-    print('    [F]ail  - Exit the script with an error')
-    print('')
-    
-    while True:
-        choice = safe_input('  Enter choice [S/R/F]: ', default='S',
-                           non_interactive=non_interactive).strip().upper()
-        if choice in ['S', 'SKIP']:
-            return 'skip'
-        elif choice in ['R', 'RETRY']:
-            return 'retry'
-        elif choice in ['F', 'FAIL']:
-            return 'fail'
-        else:
-            print('  Invalid choice. Please enter S, R, or F.')
+    lsf.write_output(f'Vault not accessible: {message} — skipping CA import')
+    return 'skip'
 
 
 def download_vault_ca_certificate(vault_url: str = VAULT_URL, 
@@ -2549,38 +2517,16 @@ def download_vcenter_ca_certificates(vcenter_hostname: str) -> Optional[list]:
 def prompt_vcenter_unavailable(vcenter_hostname: str, message: str,
                                non_interactive: bool = False) -> str:
     """
-    Prompt user for action when a vCenter CA is not accessible.
-    
+    Handle vCenter CA being inaccessible by auto-skipping.
+
     :param vcenter_hostname: The vCenter that is not accessible
     :param message: Error message describing the issue
-    :param non_interactive: If True, auto-skip without prompting
-    :return: User's choice: 'skip', 'retry', or 'fail'
+    :param non_interactive: Ignored (kept for API compatibility). Always skips.
+    :return: Always returns 'skip'
     """
-    print('')
-    print('!' * 60)
-    print(f'  WARNING: vCenter CA Certificate Not Accessible')
-    print('!' * 60)
-    print('')
-    print(f'  vCenter: {vcenter_hostname}')
-    print(f'  {message}')
-    print('')
-    print('  Options:')
-    print('    [S]kip  - Skip this vCenter and continue')
-    print('    [R]etry - Check this vCenter again')
-    print('    [F]ail  - Exit the script with an error')
-    print('')
-    
-    while True:
-        choice = safe_input('  Enter choice [S/R/F]: ', default='S',
-                           non_interactive=non_interactive).strip().upper()
-        if choice in ['S', 'SKIP']:
-            return 'skip'
-        elif choice in ['R', 'RETRY']:
-            return 'retry'
-        elif choice in ['F', 'FAIL']:
-            return 'fail'
-        else:
-            print('  Invalid choice. Please enter S, R, or F.')
+    lsf.write_output(f'{vcenter_hostname}: Not accessible ({message}) '
+                     f'— skipping CA import')
+    return 'skip'
 
 
 def configure_vcenter_ca_for_firefox(dry_run: bool = False,
@@ -2871,6 +2817,239 @@ def configure_ops_ca_for_firefox(dry_run: bool = False,
 
 
 #==============================================================================
+# SDDC MANAGER STALE LOCK / RESOURCE STATUS REMEDIATION
+#==============================================================================
+
+
+def _get_sddc_pgpassword(sddc_vm, creds, fm, pm) -> Optional[str]:
+    """
+    Retrieve the PostgreSQL password from /root/.pgpass on the SDDC Manager VM
+    using vSphere Guest Operations.
+
+    :param sddc_vm: vim.VirtualMachine for SDDC Manager
+    :param creds: vim.vm.guest.NamePasswordAuthentication
+    :param fm: GuestFileManager
+    :param pm: GuestProcessManager
+    :return: PostgreSQL password string, or None on failure
+    """
+    import urllib3
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+    spec = vim.vm.guest.ProcessManager.ProgramSpec(
+        programPath='/bin/bash',
+        arguments='-c "cat /root/.pgpass > /tmp/.confighol_pgpass.txt 2>&1"'
+    )
+    pm.StartProgramInGuest(sddc_vm, creds, spec)
+    time.sleep(2)
+
+    try:
+        info = fm.InitiateFileTransferFromGuest(sddc_vm, creds,
+                                                '/tmp/.confighol_pgpass.txt')
+        resp = requests.get(info.url, verify=False, timeout=10)
+        for line in resp.text.strip().splitlines():
+            if line.startswith('#') or not line.strip():
+                continue
+            parts = line.split(':')
+            if len(parts) >= 5:
+                return parts[4]
+    except Exception:
+        pass
+    return None
+
+
+def clear_sddc_stale_locks_and_fix_statuses(sddc_host: str, password: str,
+                                             dry_run: bool = False) -> bool:
+    """
+    Clear stale resource locks and fix non-ACTIVE resource statuses in the
+    SDDC Manager platform database.
+
+    After lab restarts, failed credential operations, or template deployments,
+    the SDDC Manager platform DB can contain stale resource locks and resources
+    stuck in ERROR/ACTIVATING state. These block all credential operations
+    (including auto-rotate disable) with "Unable to acquire resource level
+    lock(s)" or "Resources [...] are not available/ready."
+
+    This function connects to the SDDC Manager VM via vSphere Guest Operations
+    (bypassing SSH, which may have a rotated password) to:
+    1. Delete all rows from the platform.lock table
+    2. Set all vcenter, domain, nsxt, nsxt_edge_cluster statuses to ACTIVE
+    3. Restart operationsmanager, commonsvcs, domainmanager services
+
+    :param sddc_host: SDDC Manager FQDN
+    :param password: Lab password (for root Guest Operations auth)
+    :param dry_run: If True, preview what would be done
+    :return: True if successful
+    """
+    import urllib3
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+    mgmt_vc = None
+    if 'RESOURCES' in lsf.config and 'vCenters' in lsf.config['RESOURCES']:
+        vcenters = lsf.config.get('RESOURCES', 'vCenters').split('\n')
+        if vcenters:
+            mgmt_vc = vcenters[0].strip().split(':')[0]
+    if not mgmt_vc:
+        mgmt_vc = 'vc-mgmt-a.site-a.vcf.lab'
+
+    lsf.write_output(f'{sddc_host}: Checking for stale resource locks and '
+                     f'non-ACTIVE resource statuses...')
+
+    if dry_run:
+        lsf.write_output(f'{sddc_host}: Would clear stale locks and fix '
+                         f'resource statuses via Guest Operations')
+        return True
+
+    try:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        si = connect.SmartConnect(host=mgmt_vc,
+                                  user='administrator@vsphere.local',
+                                  pwd=password, sslContext=context)
+    except Exception as e:
+        lsf.write_output(f'{sddc_host}: Cannot connect to vCenter {mgmt_vc} '
+                         f'for Guest Operations: {e}')
+        return False
+
+    try:
+        content = si.RetrieveContent()
+        container = content.viewManager.CreateContainerView(
+            content.rootFolder, [vim.VirtualMachine], True)
+        sddc_vm = None
+        for vm in container.view:
+            if 'sddcmanager' in vm.name.lower():
+                sddc_vm = vm
+                break
+        container.Destroy()
+
+        if not sddc_vm:
+            lsf.write_output(f'{sddc_host}: SDDC Manager VM not found in vCenter')
+            return False
+
+        if sddc_vm.runtime.powerState != 'poweredOn':
+            lsf.write_output(f'{sddc_host}: SDDC Manager VM is not powered on')
+            return False
+
+        guest_creds = vim.vm.guest.NamePasswordAuthentication(
+            username='root', password=password)
+        pm = content.guestOperationsManager.processManager
+        fm = content.guestOperationsManager.fileManager
+
+        # Retrieve the PostgreSQL password
+        pgpass = _get_sddc_pgpassword(sddc_vm, guest_creds, fm, pm)
+        if not pgpass:
+            lsf.write_output(f'{sddc_host}: Could not retrieve PostgreSQL password')
+            return False
+
+        # Build and upload the remediation script
+        fix_script = (
+            '#!/bin/bash\n'
+            f"export PGPASSWORD='{pgpass}'\n"
+            'PSQL="/usr/pgsql/15/bin/psql -h 127.0.0.1 -U postgres"\n'
+            'OUT=/tmp/.confighol_dbfix.txt\n'
+            '\n'
+            'echo "=== LOCKS BEFORE ===" > $OUT 2>&1\n'
+            '$PSQL -d platform -t -c "SELECT count(*) FROM lock" >> $OUT 2>&1\n'
+            '\n'
+            'echo "=== DELETE LOCKS ===" >> $OUT 2>&1\n'
+            '$PSQL -d platform -c "DELETE FROM lock" >> $OUT 2>&1\n'
+            '\n'
+            'echo "=== FIX STATUSES ===" >> $OUT 2>&1\n'
+            '$PSQL -d platform -c '
+            '"UPDATE vcenter SET status = \'ACTIVE\' '
+            'WHERE status NOT IN (\'ACTIVE\')" >> $OUT 2>&1\n'
+            '$PSQL -d platform -c '
+            '"UPDATE domain SET status = \'ACTIVE\' '
+            'WHERE status NOT IN (\'ACTIVE\')" >> $OUT 2>&1\n'
+            '$PSQL -d platform -c '
+            '"UPDATE nsxt SET status = \'ACTIVE\' '
+            'WHERE status NOT IN (\'ACTIVE\')" >> $OUT 2>&1\n'
+            '$PSQL -d platform -c '
+            '"UPDATE nsxt_edge_cluster SET status = \'ACTIVE\' '
+            'WHERE status NOT IN (\'ACTIVE\')" >> $OUT 2>&1\n'
+            '\n'
+            'echo "=== RESTART SERVICES ===" >> $OUT 2>&1\n'
+            'systemctl restart operationsmanager commonsvcs domainmanager '
+            '>> $OUT 2>&1\n'
+            'echo "EXIT=$?" >> $OUT\n'
+            'echo "DONE" >> $OUT\n'
+        )
+
+        attr = vim.vm.guest.FileManager.FileAttributes()
+        script_path = '/tmp/.confighol_dbfix.sh'
+        url = fm.InitiateFileTransferToGuest(
+            sddc_vm, guest_creds, script_path, attr,
+            len(fix_script.encode()), True)
+        resp = requests.put(url, data=fix_script.encode(), verify=False,
+                            timeout=10)
+        if resp.status_code != 200:
+            lsf.write_output(f'{sddc_host}: Failed to upload fix script '
+                             f'(HTTP {resp.status_code})')
+            return False
+
+        spec = vim.vm.guest.ProcessManager.ProgramSpec(
+            programPath='/bin/bash', arguments=script_path)
+        pm.StartProgramInGuest(sddc_vm, guest_creds, spec)
+
+        lsf.write_output(f'{sddc_host}: Clearing locks, fixing statuses, '
+                         f'and restarting services...')
+
+        # Wait for services to restart (~30s)
+        time.sleep(35)
+
+        # Read results
+        try:
+            info = fm.InitiateFileTransferFromGuest(
+                sddc_vm, guest_creds, '/tmp/.confighol_dbfix.txt')
+            resp = requests.get(info.url, verify=False, timeout=10)
+            output = resp.text
+
+            if 'DONE' not in output:
+                lsf.write_output(f'{sddc_host}: Fix script may not have '
+                                 f'completed — retrying read...')
+                time.sleep(15)
+                info = fm.InitiateFileTransferFromGuest(
+                    sddc_vm, guest_creds, '/tmp/.confighol_dbfix.txt')
+                resp = requests.get(info.url, verify=False, timeout=10)
+                output = resp.text
+
+            # Parse lock count
+            lock_count = '?'
+            for line in output.splitlines():
+                line = line.strip()
+                if line.isdigit():
+                    lock_count = line
+                    break
+
+            # Count DB updates
+            updates = output.count('UPDATE')
+
+            lsf.write_output(f'{sddc_host}: Cleared {lock_count} stale lock(s), '
+                             f'applied {updates} status fix(es), '
+                             f'services restarted')
+
+        except Exception as e:
+            lsf.write_output(f'{sddc_host}: Could not read fix results: {e}')
+            lsf.write_output(f'{sddc_host}: Assuming fix was applied — '
+                             f'proceeding with auto-rotate disable')
+
+        return True
+
+    except vim.fault.InvalidGuestLogin:
+        lsf.write_output(f'{sddc_host}: Guest Operations login failed '
+                         f'(root password may have been rotated)')
+        return False
+    except Exception as e:
+        lsf.write_output(f'{sddc_host}: Guest Operations error: {e}')
+        return False
+    finally:
+        try:
+            connect.Disconnect(si)
+        except Exception:
+            pass
+
+
+#==============================================================================
 # SDDC MANAGER AUTO-ROTATE POLICY DISABLE
 #==============================================================================
 
@@ -2887,10 +3066,12 @@ def disable_sddc_auto_rotate(dry_run: bool = False) -> bool:
     SDDC Manager UI.
 
     This function:
-    1. Authenticates to the SDDC Manager API
-    2. Retrieves all credentials with an autoRotatePolicy
-    3. Disables auto-rotation for each credential using the API
-    4. Waits for each disable task to complete
+    1. Clears stale resource locks and fixes non-ACTIVE statuses via Guest Ops
+    2. Authenticates to the SDDC Manager API
+    3. Retrieves all credentials with an autoRotatePolicy
+    4. Disables auto-rotation for each credential using the API
+    5. Waits for each disable task to complete
+    6. On failure due to resource unavailability, retries after remediation
 
     API Reference:
         PATCH /v1/credentials with operationType: UPDATE_AUTO_ROTATE_POLICY
@@ -2916,6 +3097,7 @@ def disable_sddc_auto_rotate(dry_run: bool = False) -> bool:
     lsf.write_output(f'SDDC Manager: {sddc_host}')
 
     if dry_run:
+        lsf.write_output('Would clear stale resource locks and fix statuses')
         lsf.write_output('Would check for credentials with auto-rotate policies')
         lsf.write_output('Would disable auto-rotation for all service credentials')
         return True
@@ -2927,25 +3109,48 @@ def disable_sddc_auto_rotate(dry_run: bool = False) -> bool:
 
     password = get_lab_password()
 
-    # Step 1: Get API token
+    # Step 0: Pre-emptively clear stale locks and fix resource statuses
+    clear_sddc_stale_locks_and_fix_statuses(sddc_host, password, dry_run)
+
+    # Wait for SDDC Manager API to become responsive after service restart
+    lsf.write_output(f'{sddc_host}: Waiting for API to become responsive...')
+    api_ready = False
+    for attempt in range(24):
+        try:
+            resp = requests.get(f'https://{sddc_host}/v1/tokens',
+                                verify=False, timeout=5)
+            if resp.status_code in (200, 400, 401, 405):
+                api_ready = True
+                break
+        except Exception:
+            pass
+        time.sleep(5)
+
+    if not api_ready:
+        lsf.write_output(f'{sddc_host}: API not responsive after remediation '
+                         f'— proceeding anyway')
+
+    # Step 1: Get API token (try admin@local first, fall back to
+    # administrator@vsphere.local for older VCF versions)
     lsf.write_output(f'{sddc_host}: Authenticating to SDDC Manager API...')
-    try:
-        token_url = f'https://{sddc_host}/v1/tokens'
-        token_body = {
-            'username': 'administrator@vsphere.local',
-            'password': password
-        }
-        response = requests.post(token_url, json=token_body, verify=False, timeout=30)
-        if response.status_code != 200:
-            lsf.write_output(f'{sddc_host}: Failed to authenticate (HTTP {response.status_code})')
-            return False
-        token = response.json().get('accessToken', '')
-        if not token:
-            lsf.write_output(f'{sddc_host}: No access token received')
-            return False
-        lsf.write_output(f'{sddc_host}: Authentication successful')
-    except Exception as e:
-        lsf.write_output(f'{sddc_host}: API authentication error: {e}')
+    token = None
+    token_url = f'https://{sddc_host}/v1/tokens'
+    for token_user in ('admin@local', 'administrator@vsphere.local'):
+        try:
+            token_body = {'username': token_user, 'password': password}
+            response = requests.post(token_url, json=token_body,
+                                     verify=False, timeout=30)
+            if response.status_code == 200:
+                token = response.json().get('accessToken', '')
+                if token:
+                    lsf.write_output(f'{sddc_host}: Authentication successful '
+                                     f'(user: {token_user})')
+                    break
+        except Exception:
+            continue
+
+    if not token:
+        lsf.write_output(f'{sddc_host}: Failed to authenticate to SDDC Manager API')
         return False
 
     headers = {
@@ -3112,7 +3317,7 @@ def disable_sddc_auto_rotate(dry_run: bool = False) -> bool:
                 lsf.write_output(f'{sddc_host}: Error cancelling task '
                                  f'{task_id[:8]}...: {e}')
 
-    # Step 6: Verify
+    # Step 6: Verify and retry if needed
     lsf.write_output(f'{sddc_host}: Verifying auto-rotate policies are disabled...')
     try:
         response = requests.get(creds_url, headers=headers, verify=False, timeout=30)
@@ -3122,25 +3327,162 @@ def disable_sddc_auto_rotate(dry_run: bool = False) -> bool:
             if not remaining:
                 lsf.write_output(f'{sddc_host}: SUCCESS - All auto-rotate policies '
                                  f'have been disabled')
-            else:
-                lsf.write_output(f'{sddc_host}: WARNING - {len(remaining)} credential(s) '
-                                 f'still have auto-rotate enabled '
-                                 f'(resource may not be in ACTIVE state):')
+                return True
+            elif failed_tasks:
+                # Tasks failed (likely due to resource unavailability). Run
+                # remediation again and retry the disable for remaining creds.
+                lsf.write_output(f'{sddc_host}: {len(remaining)} credential(s) '
+                                 f'still have auto-rotate enabled — retrying '
+                                 f'after lock/status remediation...')
+                clear_sddc_stale_locks_and_fix_statuses(
+                    sddc_host, password, dry_run)
+
+                # Wait for API after service restart
+                for _ in range(24):
+                    try:
+                        resp = requests.get(f'https://{sddc_host}/v1/tokens',
+                                            verify=False, timeout=5)
+                        if resp.status_code in (200, 400, 401, 405):
+                            break
+                    except Exception:
+                        pass
+                    time.sleep(5)
+
+                # Re-authenticate (token may have expired during restart)
+                retry_token = None
+                for token_user in ('admin@local',
+                                   'administrator@vsphere.local'):
+                    try:
+                        token_body = {'username': token_user,
+                                      'password': password}
+                        resp = requests.post(token_url, json=token_body,
+                                             verify=False, timeout=30)
+                        if resp.status_code == 200:
+                            retry_token = resp.json().get('accessToken', '')
+                            if retry_token:
+                                break
+                    except Exception:
+                        continue
+
+                if not retry_token:
+                    lsf.write_output(f'{sddc_host}: Could not re-authenticate '
+                                     f'for retry')
+                    return True
+
+                retry_headers = {
+                    'Authorization': f'Bearer {retry_token}',
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                }
+
+                # Re-group the still-remaining credentials
+                retry_groups = {}
                 for cred in remaining:
-                    res_name = cred.get('resource', {}).get('resourceName', '?')
+                    resource = cred.get('resource', {})
+                    rn = resource.get('resourceName', '')
+                    rt = resource.get('resourceType', '')
+                    key = (rn, rt)
+                    if key not in retry_groups:
+                        retry_groups[key] = []
+                    retry_groups[key].append({
+                        'credentialType': cred.get('credentialType'),
+                        'username': cred.get('username')
+                    })
+
+                retry_tasks = []
+                for (rn, rt), creds_list in retry_groups.items():
+                    lsf.write_output(f'{sddc_host}: Retry: disabling auto-rotate '
+                                     f'for {rn} ({len(creds_list)} credential(s))...')
+                    patch_body = {
+                        'operationType': 'UPDATE_AUTO_ROTATE_POLICY',
+                        'elements': [{
+                            'resourceName': rn,
+                            'resourceType': rt,
+                            'credentials': creds_list
+                        }],
+                        'autoRotatePolicy': {
+                            'enableAutoRotatePolicy': False
+                        }
+                    }
+                    try:
+                        resp = requests.patch(
+                            creds_url, headers=retry_headers,
+                            json=patch_body, verify=False, timeout=30)
+                        if resp.status_code == 202:
+                            tid = resp.json().get('id', '')
+                            lsf.write_output(f'{sddc_host}: Retry task '
+                                             f'submitted (task: {tid[:8]}...)')
+                            retry_tasks.append(tid)
+                        else:
+                            lsf.write_output(f'{sddc_host}: Retry failed for '
+                                             f'{rn}: HTTP {resp.status_code}')
+                    except Exception as e:
+                        lsf.write_output(f'{sddc_host}: Retry error for '
+                                         f'{rn}: {e}')
+
+                # Poll retry tasks
+                if retry_tasks:
+                    time.sleep(10)
+                    for tid in retry_tasks:
+                        for _ in range(18):
+                            try:
+                                resp = requests.get(
+                                    f'https://{sddc_host}/v1/tasks/{tid}',
+                                    headers=retry_headers, verify=False,
+                                    timeout=15)
+                                if resp.status_code == 200:
+                                    st = resp.json().get('status', '')
+                                    if st == 'SUCCESSFUL':
+                                        lsf.write_output(
+                                            f'{sddc_host}: Retry task '
+                                            f'{tid[:8]}... succeeded')
+                                        break
+                                    elif st == 'FAILED':
+                                        lsf.write_output(
+                                            f'{sddc_host}: Retry task '
+                                            f'{tid[:8]}... FAILED')
+                                        break
+                            except Exception:
+                                pass
+                            time.sleep(5)
+
+                # Final verification
+                try:
+                    resp = requests.get(creds_url, headers=retry_headers,
+                                        verify=False, timeout=30)
+                    if resp.status_code == 200:
+                        still_remaining = [
+                            c for c in resp.json().get('elements', [])
+                            if c.get('autoRotatePolicy')]
+                        if not still_remaining:
+                            lsf.write_output(
+                                f'{sddc_host}: SUCCESS - All auto-rotate '
+                                f'policies disabled after retry')
+                        else:
+                            lsf.write_output(
+                                f'{sddc_host}: WARNING - '
+                                f'{len(still_remaining)} credential(s) still '
+                                f'have auto-rotate after retry')
+                            for cred in still_remaining:
+                                rn = cred.get('resource', {}).get(
+                                    'resourceName', '?')
+                                lsf.write_output(
+                                    f'  - {cred["username"]} on {rn}')
+                except Exception as e:
+                    lsf.write_output(f'{sddc_host}: Could not verify '
+                                     f'retry results: {e}')
+            else:
+                lsf.write_output(f'{sddc_host}: WARNING - {len(remaining)} '
+                                 f'credential(s) still have auto-rotate '
+                                 f'enabled:')
+                for cred in remaining:
+                    res_name = cred.get('resource', {}).get(
+                        'resourceName', '?')
                     lsf.write_output(f'  - {cred["username"]} on {res_name}')
-                lsf.write_output(f'{sddc_host}: NOTE - These can be manually disabled '
-                                 f'once the resources are in ACTIVE state')
     except Exception as e:
         lsf.write_output(f'{sddc_host}: Could not verify: {e}')
 
-    if failed_tasks:
-        lsf.write_output(f'{sddc_host}: Completed with {len(failed_tasks)} resource(s) '
-                         f'unavailable - auto-rotate could not be disabled for '
-                         f'resources not in ACTIVE state')
-    else:
-        lsf.write_output(f'{sddc_host}: Auto-rotate disable completed successfully')
-
+    lsf.write_output(f'{sddc_host}: Auto-rotate disable completed')
     return True  # Don't fail HOLification for unavailable resources
 
 
@@ -3235,7 +3577,7 @@ NOTE: NSX Edge SSH is enabled automatically via NSX Manager API.
     )
     
     parser.add_argument('-y', '--yes', action='store_true',
-                        help='Non-interactive mode: auto-accept prompts with safe defaults')
+                        help='No-op (non-interactive mode is now the default)')
     parser.add_argument('--dry-run', action='store_true',
                         help='Preview what would be done without making changes')
     parser.add_argument('--skip-vcshell', action='store_true',
@@ -3261,11 +3603,7 @@ NOTE: NSX Edge SSH is enabled automatically via NSX Manager API.
         print('DRY RUN MODE - No changes will be made')
         print('')
     
-    if args.yes:
-        print('NON-INTERACTIVE MODE - Using safe defaults for all prompts')
-        print('')
-    
-    non_interactive = args.yes
+    non_interactive = True
     
     # Initialize lsfunctions
     lsf.init(router=False)
