@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # confighol.py version 1.13 22-May 2025
 import os
 import glob

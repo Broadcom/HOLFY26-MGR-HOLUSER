@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # checkfw.py version 1.3 22-February 2025
 import socket
 import platform
