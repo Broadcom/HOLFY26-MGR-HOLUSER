@@ -9,6 +9,12 @@
 # require a new script version (e.g., confighol-9.5.py for VCF 9.5.x).
 #
 # CHANGELOG:
+# v2.8 - 2026-03-27:
+#   - Post-config credential remediation: new remediate_all_sddc_credentials()
+#     sweeps every SSH credential in SDDC Manager's DB and REMEDIATEs any
+#     whose stored password differs from the lab standard. This prevents
+#     the "VMware Cloud Foundation is initializing..." hang after shutdown/
+#     restart cycles caused by stale rotated passwords in the DB.
 # v2.7 - 2026-03-27:
 #   - Auto-rotate disable: clear stale task_metadata, entity_and_task,
 #     task_and_entity_type_and_entity from platform DB AND processing_task
@@ -144,7 +150,13 @@
 #    - Disables auto-rotation for all service credentials
 #    - Prevents failed password rotation tasks after template deployment
 #
-# 7. Final Steps:
+# 7. SDDC Manager Credential Remediation:
+#    - Sweeps all SSH credentials stored in SDDC Manager's internal DB
+#    - Identifies any whose stored password differs from the lab standard
+#    - Issues REMEDIATE PATCH requests so SDDC Manager updates its records
+#    - Prevents "Authentication failed" / stuck-initialising UI after reboot
+#
+# 8. Final Steps:
 #    - Clear ARP cache on console and router
 #    - Run vpodchecker.py to update L2 VMs (uuid, typematicdelay)
 #
@@ -202,7 +214,7 @@ import lsfunctions as lsf
 # CONFIGURATION CONSTANTS
 #==============================================================================
 
-SCRIPT_VERSION = '2.5'
+SCRIPT_VERSION = '2.8'
 SCRIPT_NAME = 'confighol.py'
 
 # SSH key paths
@@ -1699,6 +1711,170 @@ def remediate_vcenter_password_in_sddc(vcenter_fqdn: str,
             return False
     except Exception as e:
         lsf.write_output(f'{vcenter_fqdn}: SDDC Manager REMEDIATE error: {e}')
+        return False
+
+
+def remediate_all_sddc_credentials(password: str,
+                                    dry_run: bool = False) -> bool:
+    """
+    Sweep all SSH credentials stored in SDDC Manager and REMEDIATE any
+    whose password does not match the lab standard.
+
+    After HOLification resets passwords on vCenters, NSX managers, ESXi
+    hosts, and Operations VMs back to the lab standard, the SDDC Manager
+    internal credential database may still hold rotated (stale) passwords.
+    On the next power-cycle SDDC Manager services try to authenticate to
+    vCenter using those stale passwords, fail, and the UI gets stuck on
+    "VMware Cloud Foundation is initializing...".
+
+    This function queries every credential via the SDDC Manager REST API
+    and issues a REMEDIATE PATCH for each resource whose stored SSH
+    password differs from the lab standard.  REMEDIATE tells SDDC Manager
+    "the external password has already been changed — update your DB
+    record to match" without attempting to change anything on the target.
+
+    :param password: The lab-standard password (from creds.txt)
+    :param dry_run: If True, only report what would be done
+    :return: True if all remediations succeeded (or none were needed)
+    """
+    sddc_host = 'sddcmanager-a.site-a.vcf.lab'
+
+    lsf.write_output('')
+    lsf.write_output('=' * 60)
+    lsf.write_output('SDDC Manager Credential Remediation')
+    lsf.write_output('=' * 60)
+
+    try:
+        token = _get_sddc_bearer_token(sddc_host, password)
+        if not token:
+            lsf.write_output('WARNING: Could not authenticate to SDDC Manager '
+                             'API — skipping credential remediation')
+            return False
+
+        headers = {
+            'Authorization': f'Bearer {token}',
+            'Content-Type': 'application/json'
+        }
+
+        resp = requests.get(
+            f'https://{sddc_host}/v1/credentials',
+            headers=headers, verify=False, timeout=30
+        )
+        if resp.status_code != 200:
+            lsf.write_output(f'WARNING: Failed to fetch credentials '
+                             f'(HTTP {resp.status_code}) — skipping')
+            return False
+
+        elements = resp.json().get('elements', [])
+        stale: list = []
+
+        for cred in elements:
+            cred_type = cred.get('credentialType', '')
+            stored_pw = cred.get('password')
+            resource = cred.get('resource', {})
+            resource_name = resource.get('resourceName', '')
+            resource_type = resource.get('resourceType', '')
+            username = cred.get('username', '')
+
+            if cred_type != 'SSH' or stored_pw is None:
+                continue
+
+            if stored_pw == password:
+                continue
+
+            stale.append({
+                'resourceName': resource_name,
+                'resourceType': resource_type,
+                'username': username,
+                'credentialType': cred_type,
+            })
+
+        if not stale:
+            lsf.write_output('All SSH credentials in SDDC Manager already '
+                             'match the lab password — nothing to remediate')
+            return True
+
+        lsf.write_output(f'Found {len(stale)} credential(s) with stale '
+                         f'passwords:')
+        for s in stale:
+            lsf.write_output(f"  {s['resourceName']} / {s['username']} "
+                             f"({s['resourceType']})")
+
+        if dry_run:
+            lsf.write_output('DRY RUN — would remediate the above credentials')
+            return True
+
+        all_ok = True
+        for s in stale:
+            payload = {
+                'operationType': 'REMEDIATE',
+                'elements': [{
+                    'resourceName': s['resourceName'],
+                    'resourceType': s['resourceType'],
+                    'credentials': [{
+                        'credentialType': s['credentialType'],
+                        'username': s['username'],
+                        'password': password
+                    }]
+                }]
+            }
+
+            try:
+                r = requests.patch(
+                    f'https://{sddc_host}/v1/credentials',
+                    json=payload, headers=headers,
+                    verify=False, timeout=60
+                )
+                if r.status_code in (200, 202):
+                    task_id = r.json().get('id', '')
+                    lsf.write_output(
+                        f"  {s['resourceName']}/{s['username']}: "
+                        f"REMEDIATE submitted (task {task_id})")
+                    if task_id:
+                        for _ in range(24):
+                            time.sleep(5)
+                            try:
+                                tr = requests.get(
+                                    f'https://{sddc_host}/v1/tasks/{task_id}',
+                                    headers=headers, verify=False, timeout=15
+                                )
+                                if tr.status_code == 200:
+                                    status = tr.json().get('status', '')
+                                    if status in ('Successful', 'SUCCESSFUL'):
+                                        lsf.write_output(
+                                            f"  {s['resourceName']}/"
+                                            f"{s['username']}: "
+                                            f"remediated successfully")
+                                        break
+                                    if status in ('Failed', 'FAILED'):
+                                        lsf.write_output(
+                                            f"  {s['resourceName']}/"
+                                            f"{s['username']}: "
+                                            f"REMEDIATE task failed")
+                                        all_ok = False
+                                        break
+                            except Exception:
+                                pass
+                else:
+                    lsf.write_output(
+                        f"  {s['resourceName']}/{s['username']}: "
+                        f"REMEDIATE failed (HTTP {r.status_code})")
+                    all_ok = False
+            except Exception as e:
+                lsf.write_output(
+                    f"  {s['resourceName']}/{s['username']}: "
+                    f"REMEDIATE error: {e}")
+                all_ok = False
+
+        if all_ok:
+            lsf.write_output('All stale credentials remediated successfully')
+        else:
+            lsf.write_output('WARNING: Some credentials could not be '
+                             'remediated — review output above')
+        return all_ok
+
+    except Exception as e:
+        lsf.write_output(f'ERROR: Credential remediation sweep failed: {e}')
         return False
 
 
@@ -4469,8 +4645,9 @@ def main():
     5. SDDC Manager configuration
     6. VCF Automation VMs configuration (uses vmware-system-user)
     7. Operations VMs configuration
-    8. Disable SDDC Manager auto-rotate policies (prevents post-deployment failures)
-    9. Final cleanup
+    8. Remediate all stale SSH credentials in SDDC Manager DB
+    9. Disable SDDC Manager auto-rotate policies (prevents post-deployment failures)
+    10. Final cleanup
     """
     parser = argparse.ArgumentParser(
         description='HOLFY27 vApp HOLification Tool',
@@ -4619,7 +4796,13 @@ NOTE: NSX Edge SSH is enabled automatically via NSX Manager API.
     # Step 7: Configure Operations VMs
     configure_operations_vms(auth_keys_file, password, args.dry_run)
 
-    # Step 8: Final cleanup
+    # Step 8: Remediate all stale SSH credentials in SDDC Manager
+    #         This ensures that after a shutdown/restart cycle, SDDC Manager
+    #         can authenticate to vCenters, ESXi hosts, and NSX managers
+    #         using the lab-standard password set by the steps above.
+    remediate_all_sddc_credentials(password, args.dry_run)
+
+    # Step 9: Final cleanup
     perform_final_cleanup(args.dry_run)
     
     # Print summary
