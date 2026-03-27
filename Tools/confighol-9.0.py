@@ -3595,7 +3595,7 @@ NOTE: NSX Edge SSH is enabled automatically via NSX Manager API.
     print('')
     print('=' * 60)
     print('  HOLFY27 vApp HOLification Tool')
-    print(f'  Version {SCRIPT_VERSION}')
+    print(f'  Version {SCRIPT_VERSION} - open new Terminal window and run ltail to watch progress')
     print('=' * 60)
     print('')
     
