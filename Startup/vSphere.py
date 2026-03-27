@@ -199,53 +199,213 @@ if vcenters:
 if lsf.labtype != 'HOL':
     #==========================================================================
     # TASK: Ensure SSH and bash shell are enabled on vCenters
-    # The autostart services check (TASK 7) requires SSH access to each
-    # vCenter. On fresh lab environments that haven't had confighol run,
-    # SSH may be disabled and the root shell may be the VAMI appliance
-    # shell instead of bash. Use the vCenter REST API to enable SSH and
-    # set the shell, then verify SSH connectivity.
+    #
+    # vCenter 9.x uses the VAMI appliance shell as root's login shell and a
+    # PAM module (pam_mgmt_cli.so) that intercepts SSH auth with its own
+    # password prompt.  Both prevent sshpass-based remote commands.
+    #
+    # Fix via pyVmomi Guest Operations (VMware Tools) on ESXi hosts:
+    #   1. Set root login shell to /bin/bash   (usermod)
+    #   2. Remove pam_mgmt_cli.so from /etc/pam.d/sshd
+    #   3. Reset pam_faillock counters
+    # Then enable SSH + shell access via the vCenter REST API.
     #==========================================================================
     import time as _time_ssh
+    import subprocess as _subprocess_ssh
     import requests
-    
+    import ssl as _ssl_ssh
+    import urllib.request as _urlreq
+
     lsf.write_output('Ensuring SSH and bash shell are enabled on vCenters...')
-    
+
+    _PAM_SSHD_CLEAN = (
+        '# Begin /etc/pam.d/sshd\n'
+        '\n'
+        'auth            include         system-auth\n'
+        'account         include         system-account\n'
+        'password        include         system-password\n'
+        'session         include         system-session\n'
+        '\n'
+        '# End /etc/pam.d/sshd\n'
+    )
+
+    def _find_vc_vm_on_esxi(vc_name, esxi_hosts, esxi_password):
+        """Search ESXi hosts for a vCenter VM and return (si, vm, esxi_host)."""
+        for esxi_entry in esxi_hosts:
+            esxi_host = esxi_entry.split(':')[0].strip()
+            if not esxi_host or esxi_host.startswith('#'):
+                continue
+            try:
+                si = connect.SmartConnect(
+                    host=esxi_host, user='root', pwd=esxi_password,
+                    disableSslCertValidation=True
+                )
+                content = si.RetrieveContent()
+                container = content.viewManager.CreateContainerView(
+                    content.rootFolder, [vim.VirtualMachine], True
+                )
+                for vm in container.view:
+                    if vc_name in vm.name and vm.runtime.powerState == 'poweredOn':
+                        tools_ok = vm.guest.toolsRunningStatus == 'guestToolsRunning'
+                        if tools_ok:
+                            container.Destroy()
+                            return si, vm, esxi_host
+                container.Destroy()
+                connect.Disconnect(si)
+            except Exception:
+                pass
+        return None, None, None
+
+    def _guest_run(pm, vm, auth, prog, args, wait=2):
+        """Run a program inside a VM via Guest Operations and return exit code."""
+        spec = vim.vm.guest.ProcessManager.ProgramSpec(
+            programPath=prog, arguments=args
+        )
+        pid = pm.StartProgramInGuest(vm, auth, spec)
+        _time_ssh.sleep(wait)
+        procs = pm.ListProcessesInGuest(vm, auth, pids=[pid])
+        return procs[0].exitCode if procs else -1
+
+    def _guest_read(fm, vm, auth, path, esxi_host):
+        """Read a file from inside a VM via Guest Operations."""
+        ctx = _ssl_ssh.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = _ssl_ssh.CERT_NONE
+        fti = fm.InitiateFileTransferFromGuest(vm, auth, path)
+        url = fti.url.replace('*', esxi_host)
+        resp = _urlreq.urlopen(url, context=ctx)
+        return resp.read().decode()
+
+    def _get_vc_root_passwords():
+        """Query SDDC Manager for actual vCenter root passwords."""
+        pw_map = {}
+        try:
+            tok_resp = requests.post(
+                'https://sddcmanager-a.site-a.vcf.lab/v1/tokens',
+                json={'username': 'admin@local', 'password': lsf.password},
+                verify=False, timeout=15
+            )
+            if tok_resp.status_code in (200, 201):
+                token = tok_resp.json().get('accessToken', '')
+                cred_resp = requests.get(
+                    'https://sddcmanager-a.site-a.vcf.lab/v1/credentials?resourceType=VCENTER',
+                    headers={'Authorization': f'Bearer {token}'},
+                    verify=False, timeout=15
+                )
+                if cred_resp.status_code == 200:
+                    for elem in cred_resp.json().get('elements', []):
+                        if elem.get('username') == 'root':
+                            rn = elem.get('resource', {}).get('resourceName', '')
+                            pw_map[rn] = elem.get('password', lsf.password)
+        except Exception:
+            pass
+        return pw_map
+
+    vc_root_passwords = _get_vc_root_passwords()
+
     for entry in vcenters:
         if not entry or entry.strip().startswith('#'):
             continue
-        
+
         parts = entry.split(':')
         vc_hostname = parts[0].strip()
         vc_user = parts[2].strip() if len(parts) > 2 else 'administrator@vsphere.local'
-        
+        vc_short = vc_hostname.split('.')[0]
+
+        # --- Phase 1: Fix login shell and PAM via Guest Operations ---
+        lsf.write_output(f'  {vc_hostname}: Configuring bash shell via Guest Operations...')
+        si_esx, vc_vm, esxi_host = _find_vc_vm_on_esxi(vc_short, esx_hosts, lsf.password)
+
+        if vc_vm:
+            gom = si_esx.RetrieveContent().guestOperationsManager
+            pm = gom.processManager
+            fm = gom.fileManager
+
+            root_pw = vc_root_passwords.get(vc_hostname, lsf.password)
+            guest_auth = None
+            for pw_candidate in [root_pw, lsf.password]:
+                try:
+                    test_auth = vim.vm.guest.NamePasswordAuthentication(
+                        username='root', password=pw_candidate
+                    )
+                    pm.ListProcessesInGuest(vc_vm, test_auth, pids=[])
+                    guest_auth = test_auth
+                    break
+                except Exception:
+                    continue
+
+            if guest_auth:
+                rc = _guest_run(pm, vc_vm, guest_auth,
+                                '/usr/sbin/usermod', '-s /bin/bash root')
+                lsf.write_output(f'  {vc_hostname}: usermod -s /bin/bash root → rc={rc}')
+
+                _guest_run(pm, vc_vm, guest_auth, '/bin/bash',
+                           '-c "cp /etc/pam.d/sshd /etc/pam.d/sshd.bak 2>/dev/null; true"')
+
+                write_pam_args = (
+                    "-c \"cat > /etc/pam.d/sshd << 'PAMEOF'\n"
+                    + _PAM_SSHD_CLEAN
+                    + "PAMEOF\n\""
+                )
+                rc2 = _guest_run(pm, vc_vm, guest_auth, '/bin/bash', write_pam_args)
+                lsf.write_output(f'  {vc_hostname}: PAM sshd fix → rc={rc2}')
+
+                _guest_run(pm, vc_vm, guest_auth, '/bin/bash',
+                           '-c "faillock --user root --reset 2>/dev/null; true"')
+
+                _guest_run(pm, vc_vm, guest_auth, '/bin/bash',
+                           '-c "chage -I -1 -m 0 -M 99999 -E -1 root 2>/dev/null; true"')
+
+                if root_pw != lsf.password:
+                    rc_pw = _guest_run(pm, vc_vm, guest_auth, '/bin/bash',
+                                       f'-c "echo root:{lsf.password} | chpasswd"')
+                    if rc_pw == 0:
+                        lsf.write_output(f'  {vc_hostname}: Root password reset to lab default')
+
+                _guest_run(pm, vc_vm, guest_auth, '/bin/bash',
+                           '-c "systemctl restart sshd 2>/dev/null; true"')
+            else:
+                lsf.write_output(f'  {vc_hostname}: WARNING - Could not authenticate to VM via Guest Operations')
+
+            connect.Disconnect(si_esx)
+        else:
+            lsf.write_output(f'  {vc_hostname}: WARNING - VM not found on ESXi hosts, skipping Guest Operations')
+
+        # --- Phase 2: Enable SSH and shell via REST API (with retries) ---
         try:
             session = requests.Session()
             session.trust_env = False
-            
-            # Get API session token
-            session_resp = session.post(
-                f'https://{vc_hostname}/api/session',
-                auth=(vc_user, lsf.password),
-                verify=False, timeout=15, proxies=None
-            )
-            if session_resp.status_code not in (200, 201):
-                lsf.write_output(f'  {vc_hostname}: Could not get API session (HTTP {session_resp.status_code}), skipping SSH/shell check')
+
+            api_token = None
+            for attempt in range(6):
+                try:
+                    session_resp = session.post(
+                        f'https://{vc_hostname}/api/session',
+                        auth=(vc_user, lsf.password),
+                        verify=False, timeout=15, proxies=None
+                    )
+                    if session_resp.status_code in (200, 201):
+                        api_token = session_resp.text.strip().strip('"')
+                        break
+                except Exception:
+                    pass
+                lsf.write_output(f'  {vc_hostname}: Waiting for REST API...')
+                _time_ssh.sleep(10)
+
+            if not api_token:
+                lsf.write_output(f'  {vc_hostname}: REST API unavailable, skipping SSH/shell API enablement')
                 continue
-            
-            api_token = session_resp.text.strip().strip('"')
+
             api_headers = {'vmware-api-session-id': api_token}
-            
-            # Check and enable SSH
+
             ssh_resp = session.get(
                 f'https://{vc_hostname}/api/appliance/access/ssh',
                 headers=api_headers, verify=False, timeout=15, proxies=None
             )
-            ssh_enabled = False
-            if ssh_resp.status_code == 200:
-                ssh_enabled = ssh_resp.json() is True or ssh_resp.json() == True
-            
+            ssh_enabled = ssh_resp.status_code == 200 and ssh_resp.json() is True
+
             if not ssh_enabled:
-                lsf.write_output(f'  {vc_hostname}: SSH not enabled - enabling via REST API...')
+                lsf.write_output(f'  {vc_hostname}: Enabling SSH via REST API...')
                 enable_resp = session.put(
                     f'https://{vc_hostname}/api/appliance/access/ssh',
                     headers=api_headers, json=True,
@@ -257,8 +417,7 @@ if lsf.labtype != 'HOL':
                     lsf.write_output(f'  {vc_hostname}: WARNING - Failed to enable SSH (HTTP {enable_resp.status_code})')
             else:
                 lsf.write_output(f'  {vc_hostname}: SSH already enabled')
-            
-            # Check and enable bash shell
+
             shell_resp = session.get(
                 f'https://{vc_hostname}/api/appliance/access/shell',
                 headers=api_headers, verify=False, timeout=15, proxies=None
@@ -269,14 +428,14 @@ if lsf.labtype != 'HOL':
                 if isinstance(shell_data, dict):
                     shell_enabled = shell_data.get('enabled', False)
                 else:
-                    shell_enabled = shell_data is True or shell_data == True
-            
+                    shell_enabled = shell_data is True
+
             if not shell_enabled:
-                lsf.write_output(f'  {vc_hostname}: Bash shell not enabled - enabling via REST API...')
+                lsf.write_output(f'  {vc_hostname}: Enabling bash shell via REST API...')
                 shell_enable_resp = session.put(
                     f'https://{vc_hostname}/api/appliance/access/shell',
                     headers=api_headers,
-                    json={'enabled': True, 'timeout': 0},
+                    json={'enabled': True, 'timeout': 86400},
                     verify=False, timeout=15, proxies=None
                 )
                 if shell_enable_resp.status_code in [200, 204]:
@@ -285,22 +444,24 @@ if lsf.labtype != 'HOL':
                     lsf.write_output(f'  {vc_hostname}: WARNING - Failed to enable bash shell (HTTP {shell_enable_resp.status_code})')
             else:
                 lsf.write_output(f'  {vc_hostname}: Bash shell already enabled')
-            
-            # Also ensure root user has /bin/bash as shell via SSH
-            # (the REST API enables shell access but may not change the login shell)
-            if lsf.test_tcp_port(vc_hostname, 22, timeout=5):
-                chsh_result = lsf.ssh('chsh -s /bin/bash root 2>/dev/null; echo OK',f'root@{vc_hostname}',lsf.password)
-                if hasattr(chsh_result, 'stdout') and 'OK' in chsh_result.stdout:
-                    lsf.write_output(f'  {vc_hostname}: Root shell set to /bin/bash')
-                else:
-                    lsf.write_output(f'  {vc_hostname}: Note - chsh not available (shell may already be bash)')
-            
-            # Delete the API session
+
             session.delete(f'https://{vc_hostname}/api/session',
                            headers=api_headers, verify=False, timeout=10, proxies=None)
-            
+
         except Exception as e:
-            lsf.write_output(f'  {vc_hostname}: WARNING - SSH/shell enablement check failed: {e}')
+            lsf.write_output(f'  {vc_hostname}: WARNING - REST API enablement failed: {e}')
+
+        # --- Phase 3: Verify SSH connectivity ---
+        _time_ssh.sleep(2)
+        ssh_test = _subprocess_ssh.run(
+            f'{lsf.sshpass} -p {lsf.password} ssh -o StrictHostKeyChecking=accept-new '
+            f'-o ConnectTimeout=10 root@{vc_hostname} "echo SSH_OK"',
+            shell=True, capture_output=True, text=True, timeout=30
+        )
+        if 'SSH_OK' in (ssh_test.stdout or ''):
+            lsf.write_output(f'  {vc_hostname}: SSH connectivity verified')
+        else:
+            lsf.write_output(f'  {vc_hostname}: WARNING - SSH test failed (rc={ssh_test.returncode})')
 
 if lsf.labtype != 'HOL':
     #==========================================================================
@@ -310,6 +471,7 @@ if lsf.labtype != 'HOL':
     # and start any AUTOMATIC services that are not in STARTED state.
     #==========================================================================
     import time as _time
+    import subprocess as _subprocess
 
     autostart_total = 0
     autostart_started = 0
@@ -340,9 +502,16 @@ if lsf.labtype != 'HOL':
             "fi; done'"
         )
 
-        result = lsf.run_command(check_cmd)
+        try:
+            result = _subprocess.run(
+                check_cmd, shell=True, capture_output=True, text=True, timeout=120
+            )
+        except Exception as e:
+            lsf.write_output(f'  WARNING: Could not query services on {vc_hostname}: {e}')
+            autostart_failed += 1
+            continue
 
-        if not hasattr(result, 'stdout') or not result.stdout:
+        if result.returncode != 0 or not result.stdout:
             lsf.write_output(f'  WARNING: Could not query services on {vc_hostname}')
             autostart_failed += 1
             continue
@@ -375,16 +544,26 @@ if lsf.labtype != 'HOL':
         for svc_name, svc_state in not_started:
             lsf.write_output(f'    {svc_name}: {svc_state} - starting...')
 
-            start_result = lsf.ssh(f'vmon-cli --start {svc_name} 2>&1', f'root@{vc_hostname}', lsf.password)
+            start_cmd = (
+                f"{lsf.sshpass} -p {lsf.password} ssh {ssh_opts} "
+                f"root@{vc_hostname} 'vmon-cli --start {svc_name} 2>&1'"
+            )
+            _subprocess.run(start_cmd, shell=True, capture_output=True,
+                            text=True, timeout=120)
 
             started = False
             wait_start = _time.time()
             while (_time.time() - wait_start) < AUTOSTART_START_TIMEOUT:
-                verify_result = lsf.ssh(
-                    f"vmon-cli -s {svc_name} 2>/dev/null | grep 'RunState:' | head -1 | sed 's/.*RunState: //'",
-                    f'root@{vc_hostname}', lsf.password
+                verify_cmd = (
+                    f"{lsf.sshpass} -p {lsf.password} ssh {ssh_opts} "
+                    f"root@{vc_hostname} "
+                    f"\"vmon-cli -s {svc_name} 2>/dev/null | grep 'RunState:' | head -1 | sed 's/.*RunState: //'\""
                 )
-                if hasattr(verify_result, 'stdout') and verify_result.stdout.strip() == 'STARTED':
+                verify_result = _subprocess.run(
+                    verify_cmd, shell=True, capture_output=True,
+                    text=True, timeout=30
+                )
+                if verify_result.stdout.strip() == 'STARTED':
                     started = True
                     break
                 _time.sleep(AUTOSTART_CHECK_INTERVAL)
