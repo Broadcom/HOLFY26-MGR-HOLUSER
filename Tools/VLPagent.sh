@@ -28,7 +28,7 @@ elif [ "${vPod_SKU}" = "HOL-2634" ];then
    # overwrite logfile on first write
    echo "Using VLP Agent version ${vlpagentversion} for ${vPod_SKU}" > $logfile
 else
-   vlpagentversion='1.0.10'
+   vlpagentversion='1.0.11'
    # overwrite logfile on first write
    echo "Using VLP Agent version ${vlpagentversion} for ${vPod_SKU}" > $logfile
 fi
