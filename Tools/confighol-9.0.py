@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # confighol-9.0.py - HOLFY27 vApp HOLification Tool
-# Version 2.4 - March 2026
+# Version 2.7 - March 2026
 # Author - Burke Azbill and HOL Core Team
 #
 # Script Naming Convention:
@@ -9,6 +9,40 @@
 # require a new script version (e.g., confighol-9.5.py for VCF 9.5.x).
 #
 # CHANGELOG:
+# v2.7 - 2026-03-27:
+#   - Auto-rotate disable: clear stale task_metadata, entity_and_task,
+#     task_and_entity_type_and_entity from platform DB AND processing_task
+#     from operationsmanager + domainmanager DBs. Stale tasks (from prior
+#     failed operations) consume the 10-task concurrency limit, causing
+#     HTTP 403 "maximum number of 10 concurrent" errors that prevent
+#     auto-rotate disable from succeeding
+#   - Auto-rotate disable: detect HTTP 403 concurrency limit and auto-remediate
+#     by clearing stale tasks, re-authenticating, waiting for API, and retrying
+#   - Operations VMs: retrieve rotated passwords from SDDC Manager credentials
+#     API when standard password fails; reset to lab standard after connecting
+#   - Operations VMs: use effective_pw (rotated or standard) for all SSH/SCP ops
+# v2.6 - 2026-03-27:
+#   - vCenter SSH: use pyVmomi Guest Operations to fix VAMI shell, PAM, and
+#     password rotation before attempting SSH (same approach as vSphere.py).
+#     This fixes the root cause of SSH failures on fresh pods where sshpass
+#     cannot authenticate through pam_mgmt_cli.so
+#   - SDDC Manager ssh-copy-id: use subprocess.run(shell=True) instead of
+#     lsf.run_command() to avoid splitting the quoted password on spaces
+#   - Operations VMs: try vmware-system-user and vcf if root SSH fails; gracefully
+#     skip VMs where SSH is not available (some Ops VMs block root access)
+#   - All SSH operations: use subprocess.run(shell=True) for password-based
+#     commands to avoid lsf.run_command quoting issues
+# v2.5 - 2026-03-27:
+#   - vCenter SSH password recovery: if standard lab password fails, query
+#     SDDC Manager for the rotated password, connect with it, reset root
+#     password back to lab standard, and REMEDIATE SDDC Manager's stored
+#     credential to match
+#   - NSX Manager: discover additional users (svc*, etc.) beyond root/admin/
+#     audit via GET /api/v1/node/users and set non-expiring passwords
+#   - VCF Operations: disable/maximise password management policies via the
+#     suite-api internal passwordmanagement API (VCF 9.1+; gracefully skips
+#     on 9.0 where the API returns 404)
+#   - Extracted _get_sddc_bearer_token() helper for reuse across functions
 # v2.4 - 2026-03-27:
 #   - Fully non-interactive: removed all interactive prompts (Vault skip,
 #     vCenter shell enable, NSX Manager configure, NSX Edge SSH fallback).
@@ -157,6 +191,7 @@ import requests
 sys.path.insert(0, '/home/holuser/hol')
 
 from pyVim import connect
+from pyVim.connect import SmartConnect, Disconnect
 from pyVmomi import vim
 from pyVim.task import WaitForTask
 
@@ -167,7 +202,7 @@ import lsfunctions as lsf
 # CONFIGURATION CONSTANTS
 #==============================================================================
 
-SCRIPT_VERSION = '2.4'
+SCRIPT_VERSION = '2.5'
 SCRIPT_NAME = 'confighol.py'
 
 # SSH key paths
@@ -632,37 +667,91 @@ def configure_all_esxi_hosts(esx_hosts: list, auth_keys_file: str,
 
 def enable_vcenter_shell(hostname: str, password: str, dry_run: bool = False) -> bool:
     """
-    Enable bash shell for root user on vCenter Server.
-    
-    By default, vCenter uses the VAMI shell which is limited. This function
-    uses an expect script to change root's shell to /bin/bash for easier
-    command-line access.
-    
-    NOTE: This operation can only be run once per vCenter instance.
-    Subsequent runs will fail as the shell is already changed.
-    
+    Enable SSH and bash shell for root on vCenter via REST API.
+
+    The Guest Operations recovery (_fix_vcenter_via_guest_ops) already sets
+    root's login shell to /bin/bash and fixes PAM.  This function complements
+    that by enabling SSH access and the BASH shell timeout via the vCenter
+    REST API (same approach as vSphere.py Phase 2).
+
     :param hostname: vCenter hostname
-    :param password: Root password
+    :param password: Root password (SSO admin, not root — used for API session)
     :param dry_run: If True, preview only
     :return: True if successful
     """
     if dry_run:
-        lsf.write_output(f'{hostname}: Would enable bash shell for root')
+        lsf.write_output(f'{hostname}: Would enable SSH and bash shell via REST API')
         return True
-    
-    expect_script = os.path.expanduser('~/hol/Tools/vcshell.exp')
-    if not os.path.isfile(expect_script):
-        lsf.write_output(f'{hostname}: vcshell.exp not found, skipping shell config')
-        return False
-    
-    lsf.write_output(f'{hostname}: Enabling bash shell for root...')
-    result = lsf.run_command(f'/usr/bin/expect {expect_script} {hostname} {password}')
-    
-    if result.returncode == 0:
-        lsf.write_output(f'{hostname}: Shell enabled successfully')
+
+    try:
+        session = requests.Session()
+        session.trust_env = False
+
+        sso_user = 'administrator@vsphere.local'
+        api_token = None
+        for attempt in range(6):
+            try:
+                resp = session.post(
+                    f'https://{hostname}/api/session',
+                    auth=(sso_user, password),
+                    verify=False, timeout=15, proxies=None)
+                if resp.status_code in (200, 201):
+                    api_token = resp.text.strip().strip('"')
+                    break
+            except Exception:
+                pass
+            lsf.write_output(f'{hostname}: Waiting for REST API...')
+            time.sleep(10)
+
+        if not api_token:
+            lsf.write_output(f'{hostname}: REST API unavailable, skipping SSH/shell enablement')
+            return False
+
+        headers = {'vmware-api-session-id': api_token}
+
+        ssh_resp = session.get(f'https://{hostname}/api/appliance/access/ssh',
+                               headers=headers, verify=False, timeout=15,
+                               proxies=None)
+        if not (ssh_resp.status_code == 200 and ssh_resp.json() is True):
+            lsf.write_output(f'{hostname}: Enabling SSH via REST API...')
+            r = session.put(f'https://{hostname}/api/appliance/access/ssh',
+                            headers=headers, json=True, verify=False,
+                            timeout=15, proxies=None)
+            if r.status_code in (200, 204):
+                lsf.write_output(f'{hostname}: SSH enabled successfully')
+            else:
+                lsf.write_output(f'{hostname}: WARNING - SSH enable HTTP {r.status_code}')
+        else:
+            lsf.write_output(f'{hostname}: SSH already enabled')
+
+        shell_resp = session.get(f'https://{hostname}/api/appliance/access/shell',
+                                  headers=headers, verify=False, timeout=15,
+                                  proxies=None)
+        shell_enabled = False
+        if shell_resp.status_code == 200:
+            d = shell_resp.json()
+            shell_enabled = (d.get('enabled', False) if isinstance(d, dict)
+                             else d is True)
+        if not shell_enabled:
+            lsf.write_output(f'{hostname}: Enabling bash shell via REST API...')
+            r = session.put(f'https://{hostname}/api/appliance/access/shell',
+                            headers=headers,
+                            json={'enabled': True, 'timeout': 86400},
+                            verify=False, timeout=15, proxies=None)
+            if r.status_code in (200, 204):
+                lsf.write_output(f'{hostname}: Bash shell enabled successfully')
+            else:
+                lsf.write_output(f'{hostname}: WARNING - Shell enable HTTP {r.status_code}')
+        else:
+            lsf.write_output(f'{hostname}: Bash shell already enabled')
+
+        session.delete(f'https://{hostname}/api/session',
+                       headers=headers, verify=False, timeout=10,
+                       proxies=None)
         return True
-    else:
-        lsf.write_output(f'{hostname}: Shell enable failed (may already be configured)')
+
+    except Exception as e:
+        lsf.write_output(f'{hostname}: WARNING - REST API enablement failed: {e}')
         return False
 
 
@@ -898,20 +987,202 @@ def configure_vcenter_password_policies_powershell(hostname: str, user: str,
     return result.returncode == 0
 
 
+def _test_vcenter_ssh(hostname: str, password: str) -> bool:
+    """Return True if SSH with the given password succeeds.
+
+    sshpass exit codes: 1=invalid args, 2=conflicting args, 3=runtime error,
+    5=invalid/incorrect password, 6=host key unknown.  We treat everything
+    except 0 as failure so the caller can attempt recovery.
+    """
+    try:
+        result = subprocess.run(
+            f'sshpass -p "{password}" ssh -o StrictHostKeyChecking=no '
+            f'-o UserKnownHostsFile=/dev/null -o ConnectTimeout=15 '
+            f'-o ServerAliveInterval=5 '
+            f'root@{hostname} "echo ok"',
+            shell=True, capture_output=True, text=True, timeout=30
+        )
+        return result.returncode == 0 and 'ok' in result.stdout
+    except subprocess.TimeoutExpired:
+        lsf.write_output(f'{hostname}: SSH connection timed out')
+        return False
+
+
+_PAM_SSHD_CLEAN = (
+    '# Begin /etc/pam.d/sshd\n'
+    '\n'
+    'auth            include         system-auth\n'
+    'account         include         system-account\n'
+    'password        include         system-password\n'
+    'session         include         system-session\n'
+    '\n'
+    '# End /etc/pam.d/sshd\n'
+)
+
+
+def _find_vc_vm_on_esxi(vc_name: str, password: str):
+    """Locate a vCenter VM on ESXi hosts via Guest Operations.
+
+    :return: (ServiceInstance, vm, esxi_host) or (None, None, None)
+    """
+    esxi_hosts = []
+    try:
+        if 'ESXiHosts' in lsf.config['RESOURCES'].keys():
+            esxi_hosts = lsf.config.get('RESOURCES', 'ESXiHosts').split('\n')
+    except (KeyError, Exception):
+        pass
+
+    vc_short = vc_name.split('.')[0]
+    ctx = ssl._create_unverified_context()
+
+    for entry in esxi_hosts:
+        esxi_host = entry.split(':')[0].strip()
+        if not esxi_host or esxi_host.startswith('#'):
+            continue
+        try:
+            si = SmartConnect(host=esxi_host, user='root', pwd=password,
+                              sslContext=ctx)
+            content = si.RetrieveContent()
+            view = content.viewManager.CreateContainerView(
+                content.rootFolder, [vim.VirtualMachine], True)
+            for vm in view.view:
+                if vc_short in vm.name and vm.runtime.powerState == 'poweredOn':
+                    if vm.guest.toolsRunningStatus == 'guestToolsRunning':
+                        view.Destroy()
+                        return si, vm, esxi_host
+            view.Destroy()
+            Disconnect(si)
+        except Exception:
+            pass
+    return None, None, None
+
+
+def _guest_run(pm, vm, auth, prog: str, args: str, wait: int = 2) -> int:
+    """Run a program inside a VM via Guest Operations."""
+    spec = vim.vm.guest.ProcessManager.ProgramSpec(
+        programPath=prog, arguments=args)
+    pid = pm.StartProgramInGuest(vm, auth, spec)
+    time.sleep(wait)
+    procs = pm.ListProcessesInGuest(vm, auth, pids=[pid])
+    return procs[0].exitCode if procs else -1
+
+
+def _fix_vcenter_via_guest_ops(hostname: str, lab_password: str) -> str:
+    """
+    Fix vCenter SSH access via Guest Operations and return working password.
+
+    On a fresh vCenter the root login shell is VAMI shell and PAM has
+    pam_mgmt_cli.so that blocks sshpass.  This function:
+    1. Finds the vCenter VM on ESXi hosts
+    2. Queries SDDC Manager for the actual root password
+    3. Authenticates via Guest Operations (tries rotated, then lab password)
+    4. Fixes login shell, PAM, faillock, and password expiry
+    5. Resets root password to lab standard if it was rotated
+    6. Restarts sshd
+    7. REMEDIATEs the SDDC Manager credential if password was changed
+
+    :return: The password to use for subsequent SSH operations
+    """
+    lsf.write_output(f'{hostname}: Attempting recovery via Guest Operations...')
+
+    si, vc_vm, esxi_host = _find_vc_vm_on_esxi(hostname, lab_password)
+    if not vc_vm:
+        lsf.write_output(f'{hostname}: Could not find VM on ESXi hosts — '
+                         f'Guest Operations unavailable')
+        return lab_password
+
+    gom = si.RetrieveContent().guestOperationsManager
+    pm = gom.processManager
+
+    rotated_pw = get_vcenter_root_password_from_sddc(hostname, lab_password)
+    candidates = []
+    if rotated_pw and rotated_pw != lab_password:
+        candidates.append(rotated_pw)
+    candidates.append(lab_password)
+
+    guest_auth = None
+    used_pw = lab_password
+    for pw in candidates:
+        try:
+            auth = vim.vm.guest.NamePasswordAuthentication(
+                username='root', password=pw)
+            pm.ListProcessesInGuest(vc_vm, auth, pids=[])
+            guest_auth = auth
+            used_pw = pw
+            break
+        except Exception:
+            continue
+
+    if not guest_auth:
+        lsf.write_output(f'{hostname}: Could not authenticate to VM '
+                         f'via Guest Operations')
+        Disconnect(si)
+        return lab_password
+
+    lsf.write_output(f'{hostname}: Guest Operations authenticated '
+                     f'(rotated={used_pw != lab_password})')
+
+    rc = _guest_run(pm, vc_vm, guest_auth,
+                    '/usr/sbin/usermod', '-s /bin/bash root')
+    lsf.write_output(f'{hostname}: usermod -s /bin/bash root → rc={rc}')
+
+    _guest_run(pm, vc_vm, guest_auth, '/bin/bash',
+               '-c "cp /etc/pam.d/sshd /etc/pam.d/sshd.bak 2>/dev/null; true"')
+
+    write_pam_args = (
+        "-c \"cat > /etc/pam.d/sshd << 'PAMEOF'\n"
+        + _PAM_SSHD_CLEAN
+        + "PAMEOF\n\""
+    )
+    rc2 = _guest_run(pm, vc_vm, guest_auth, '/bin/bash', write_pam_args)
+    lsf.write_output(f'{hostname}: PAM sshd fix → rc={rc2}')
+
+    _guest_run(pm, vc_vm, guest_auth, '/bin/bash',
+               '-c "faillock --user root --reset 2>/dev/null; true"')
+    _guest_run(pm, vc_vm, guest_auth, '/bin/bash',
+               '-c "chage -I -1 -m 0 -M 99999 -E -1 root 2>/dev/null; true"')
+
+    if used_pw != lab_password:
+        rc_pw = _guest_run(pm, vc_vm, guest_auth, '/bin/bash',
+                           f'-c "echo root:{lab_password} | chpasswd"')
+        if rc_pw == 0:
+            lsf.write_output(f'{hostname}: Root password reset to lab default')
+            remediate_vcenter_password_in_sddc(hostname, lab_password)
+
+    _guest_run(pm, vc_vm, guest_auth, '/bin/bash',
+               '-c "systemctl restart sshd 2>/dev/null; true"')
+
+    Disconnect(si)
+
+    time.sleep(3)
+    if _test_vcenter_ssh(hostname, lab_password):
+        lsf.write_output(f'{hostname}: SSH now working with lab password')
+        return lab_password
+
+    if used_pw != lab_password and _test_vcenter_ssh(hostname, used_pw):
+        lsf.write_output(f'{hostname}: SSH working with rotated password')
+        return used_pw
+
+    lsf.write_output(f'{hostname}: SSH still not working after Guest Ops fix '
+                     f'— proceeding with lab password')
+    return lab_password
+
+
 def configure_vcenter(entry: str, auth_keys_file: str, password: str,
                       skip_shell: bool = False, dry_run: bool = False,
                       non_interactive: bool = False) -> bool:
     """
     Perform complete vCenter configuration for HOLification.
-    
+
     This function handles all vCenter-related configuration:
-    1. Enable bash shell (optional, interactive prompt)
-    2. Configure SSH authorized_keys
-    3. Enable browser support and MOB
-    4. Configure password policies and cluster settings
-    5. Set password expiration for root
-    6. Clear ARP cache
-    
+    1. Test SSH connectivity; recover rotated password via SDDC Manager if needed
+    2. Enable bash shell
+    3. Configure SSH authorized_keys
+    4. Enable browser support and MOB
+    5. Configure password policies and cluster settings
+    6. Set password expiration for root
+    7. Clear ARP cache
+
     :param entry: vCenter entry from config.ini (hostname:type:user)
     :param auth_keys_file: Path to authorized_keys file
     :param password: Root password
@@ -925,43 +1196,68 @@ def configure_vcenter(entry: str, auth_keys_file: str, password: str,
     hostname = parts[0].strip()
     vc_type = parts[1].strip() if len(parts) > 1 else 'linux'
     user = parts[2].strip() if len(parts) > 2 else 'administrator@vsphere.local'
-    
+
     lsf.write_output('')
     lsf.write_output(f'Configuring vCenter: {hostname}')
     lsf.write_output('-' * 50)
-    
+
     success = True
-    
+    effective_password = password
+
+    # Step 0: Test SSH — if it fails, use Guest Operations to fix
+    # VAMI shell, PAM, password rotation, and sshd restart
+    if not dry_run:
+        lsf.write_output(f'{hostname}: Testing SSH connectivity...')
+        try:
+            if _test_vcenter_ssh(hostname, password):
+                lsf.write_output(f'{hostname}: SSH connection OK')
+            else:
+                effective_password = _fix_vcenter_via_guest_ops(
+                    hostname, password)
+        except Exception as e:
+            lsf.write_output(f'{hostname}: SSH test error ({e}) — '
+                             f'attempting Guest Operations recovery...')
+            try:
+                effective_password = _fix_vcenter_via_guest_ops(
+                    hostname, password)
+            except Exception as e2:
+                lsf.write_output(f'{hostname}: Guest Ops also failed ({e2}) '
+                                 f'— proceeding with standard password')
+
     # Step 1: Enable shell and browser support
     if not skip_shell:
         if not dry_run:
             enable_vcenter_shell(hostname, password, dry_run)
 
             lsf.write_output(f'{hostname}: Copying authorized_keys')
-            lsf.scp(auth_keys_file, f'root@{hostname}:{LINUX_AUTH_FILE}', password)
-            lsf.ssh(f'chmod 600 {LINUX_AUTH_FILE}', f'root@{hostname}', password)
+            lsf.scp(auth_keys_file,
+                     f'root@{hostname}:{LINUX_AUTH_FILE}', effective_password)
+            lsf.ssh(f'chmod 600 {LINUX_AUTH_FILE}',
+                     f'root@{hostname}', effective_password)
 
-            configure_vcenter_browser_support(hostname, password, dry_run)
+            configure_vcenter_browser_support(hostname, effective_password,
+                                              dry_run)
         else:
             lsf.write_output(f'{hostname}: Would configure shell and browser support')
-    
+
     # Step 2: Set password expiration for root
     if not dry_run:
         lsf.write_output(f'{hostname}: Setting non-expiring password for root')
-        lsf.ssh('chage -M -1 root', f'root@{hostname}', password)
+        lsf.ssh('chage -M -1 root', f'root@{hostname}', effective_password)
     else:
         lsf.write_output(f'{hostname}: Would set non-expiring password for root')
-    
+
     # Step 3: Configure password policies and cluster settings
     configure_vcenter_password_policies(hostname, user, password, dry_run)
-    
+
     # Step 4: Clear ARP cache
     if not dry_run:
         lsf.write_output(f'{hostname}: Clearing ARP cache')
-        lsf.ssh('ip -s -s neigh flush all', f'root@{hostname}', password)
+        lsf.ssh('ip -s -s neigh flush all',
+                f'root@{hostname}', effective_password)
     else:
         lsf.write_output(f'{hostname}: Would clear ARP cache')
-    
+
     lsf.write_output(f'{hostname}: vCenter configuration complete')
     return success
 
@@ -1113,76 +1409,44 @@ def set_nsx_password_expiration_via_api(hostname: str, password: str,
 def get_nsx_root_password_from_sddc(nsx_fqdn: str, password: str) -> Optional[str]:
     """
     Retrieve the actual NSX Manager root SSH password from SDDC Manager.
-    
+
     SDDC Manager may have rotated the root password away from the standard
-    lab password. This queries the SDDC Manager credentials API to get the
-    current password.
-    
+    lab password.  This queries the credentials API filtered by NSXT_MANAGER.
+
     :param nsx_fqdn: NSX Manager FQDN (individual node, e.g. nsx-wld01-01a)
     :param password: Standard lab password (used to auth to SDDC Manager)
     :return: The actual root password, or None if lookup fails
     """
     import re
     sddc_host = 'sddcmanager-a.site-a.vcf.lab'
-    
+
     try:
         cluster_name = re.sub(r'-\d+a\.', '-a.', nsx_fqdn)
         if cluster_name == nsx_fqdn:
             cluster_name = re.sub(r'-\d+b\.', '-b.', nsx_fqdn)
-        
-        # Use subprocess directly to avoid lsf.ssh splitting issues with
-        # pipes and special characters (fy26hol compat)
-        ssh_opts = '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
-        
-        token_ssh_cmd = (
-            f'sshpass -p "{password}" ssh {ssh_opts} vcf@{sddc_host} '
-            f'"curl -sk -X POST https://localhost/v1/tokens '
-            f'-H \'Content-Type: application/json\' '
-            f'-d \'{{\\\"username\\\":\\\"admin@local\\\",\\\"password\\\":\\\"{password}\\\"}}\'"'
-        )
-        token_result = subprocess.run(
-            token_ssh_cmd, shell=True, capture_output=True, text=True, timeout=30
-        )
-        
-        if token_result.returncode != 0:
-            return None
-        
-        stdout = token_result.stdout.strip()
-        json_start = stdout.find('{')
-        if json_start < 0:
-            return None
-        
-        token_data = json.loads(stdout[json_start:])
-        token = token_data.get('accessToken', '')
+
+        token = _get_sddc_bearer_token(sddc_host, password)
         if not token:
             return None
-        
-        cred_ssh_cmd = (
-            f'sshpass -p "{password}" ssh {ssh_opts} vcf@{sddc_host} '
-            f'"curl -sk -X GET \'https://localhost/v1/credentials?resourceType=NSXT_MANAGER\' '
-            f'-H \'Authorization: Bearer {token}\' '
-            f'-H \'Content-Type: application/json\'"'
+
+        headers = {
+            'Authorization': f'Bearer {token}',
+            'Content-Type': 'application/json'
+        }
+        resp = requests.get(
+            f'https://{sddc_host}/v1/credentials',
+            params={'resourceType': 'NSXT_MANAGER'},
+            headers=headers, verify=False, timeout=30
         )
-        cred_result = subprocess.run(
-            cred_ssh_cmd, shell=True, capture_output=True, text=True, timeout=30
-        )
-        
-        if cred_result.returncode != 0:
+        if resp.status_code != 200:
             return None
-        
-        stdout = cred_result.stdout.strip()
-        json_start = stdout.find('{')
-        if json_start < 0:
-            return None
-        
-        creds_data = json.loads(stdout[json_start:])
-        for cred in creds_data.get('elements', []):
+
+        for cred in resp.json().get('elements', []):
             resource_name = cred.get('resource', {}).get('resourceName', '')
             if (cluster_name in resource_name and
-                cred.get('credentialType') == 'SSH' and
-                cred.get('username') == 'root'):
+                    cred.get('credentialType') == 'SSH' and
+                    cred.get('username') == 'root'):
                 return cred.get('password')
-        
         return None
     except Exception as e:
         lsf.write_output(f'{nsx_fqdn}: SDDC Manager credential lookup failed: {e}')
@@ -1216,6 +1480,225 @@ def reset_nsx_root_password(hostname: str, admin_password: str,
             return False
     except Exception as e:
         lsf.write_output(f'{hostname}: FAILED - Password reset error: {e}')
+        return False
+
+
+def _get_sddc_bearer_token(sddc_host: str, password: str) -> Optional[str]:
+    """
+    Obtain a Bearer token from the SDDC Manager API.
+
+    Tries ``admin@local`` first, falls back to ``administrator@vsphere.local``.
+
+    :param sddc_host: SDDC Manager FQDN
+    :param password: Lab password
+    :return: Access token string, or None on failure
+    """
+    for user in ('admin@local', 'administrator@vsphere.local'):
+        try:
+            resp = requests.post(
+                f'https://{sddc_host}/v1/tokens',
+                json={'username': user, 'password': password},
+                verify=False, timeout=30
+            )
+            if resp.status_code == 200:
+                tok = resp.json().get('accessToken', '')
+                if tok:
+                    return tok
+        except Exception:
+            continue
+    return None
+
+
+def get_vcenter_root_password_from_sddc(vcenter_fqdn: str,
+                                         password: str) -> Optional[str]:
+    """
+    Retrieve the actual vCenter root SSH password from SDDC Manager.
+
+    SDDC Manager may have rotated the root password away from the standard
+    lab password.  This queries the credentials API filtered by VCENTER type.
+
+    :param vcenter_fqdn: vCenter FQDN (e.g. vc-mgmt-a.site-a.vcf.lab)
+    :param password: Standard lab password (used to auth to SDDC Manager)
+    :return: The actual root password, or None if lookup fails
+    """
+    sddc_host = 'sddcmanager-a.site-a.vcf.lab'
+
+    try:
+        token = _get_sddc_bearer_token(sddc_host, password)
+        if not token:
+            return None
+
+        headers = {
+            'Authorization': f'Bearer {token}',
+            'Content-Type': 'application/json'
+        }
+        resp = requests.get(
+            f'https://{sddc_host}/v1/credentials',
+            params={'resourceType': 'VCENTER'},
+            headers=headers, verify=False, timeout=30
+        )
+        if resp.status_code != 200:
+            return None
+
+        for cred in resp.json().get('elements', []):
+            resource_name = cred.get('resource', {}).get('resourceName', '')
+            if (resource_name == vcenter_fqdn and
+                    cred.get('credentialType') == 'SSH' and
+                    cred.get('username') == 'root'):
+                return cred.get('password')
+        return None
+    except Exception as e:
+        lsf.write_output(f'{vcenter_fqdn}: SDDC Manager credential lookup failed: {e}')
+        return None
+
+
+def get_ops_vm_password_from_sddc(vm_hostname: str,
+                                   password: str) -> Optional[str]:
+    """
+    Retrieve the actual SSH password for an Operations VM from SDDC Manager.
+
+    SDDC Manager rotates passwords on Operations VMs (ops-a, opscollector-01a,
+    opslcm-a, etc.). This queries all credentials and matches by resource name
+    containing the VM's short hostname.
+
+    :param vm_hostname: Operations VM short name (e.g. ops-a, opslcm-a)
+    :param password: Standard lab password (used to auth to SDDC Manager)
+    :return: The actual password, or None if lookup fails
+    """
+    sddc_host = 'sddcmanager-a.site-a.vcf.lab'
+
+    try:
+        token = _get_sddc_bearer_token(sddc_host, password)
+        if not token:
+            return None
+
+        headers = {
+            'Authorization': f'Bearer {token}',
+            'Content-Type': 'application/json'
+        }
+        resp = requests.get(
+            f'https://{sddc_host}/v1/credentials',
+            headers=headers, verify=False, timeout=30
+        )
+        if resp.status_code != 200:
+            return None
+
+        for cred in resp.json().get('elements', []):
+            resource_name = cred.get('resource', {}).get('resourceName', '')
+            if (vm_hostname in resource_name and
+                    cred.get('credentialType') == 'SSH'):
+                retrieved_pw = cred.get('password')
+                if retrieved_pw:
+                    return retrieved_pw
+        return None
+    except Exception as e:
+        lsf.write_output(f'{vm_hostname}: SDDC Manager credential lookup failed: {e}')
+        return None
+
+
+def reset_vcenter_root_password(hostname: str, old_password: str,
+                                 new_password: str) -> bool:
+    """
+    Reset the vCenter root password via SSH using the current (rotated) password.
+
+    :param hostname: vCenter FQDN
+    :param old_password: Current root password
+    :param new_password: Desired new root password
+    :return: True if successful
+    """
+    try:
+        cmd = (
+            f'sshpass -p "{old_password}" ssh -o StrictHostKeyChecking=no '
+            f'-o UserKnownHostsFile=/dev/null root@{hostname} '
+            f'"echo \'root:{new_password}\' | chpasswd"'
+        )
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True,
+                                timeout=30)
+        if result.returncode == 0:
+            lsf.write_output(f'{hostname}: Root password reset to lab standard')
+            return True
+        lsf.write_output(f'{hostname}: Password reset failed (exit {result.returncode})')
+        return False
+    except Exception as e:
+        lsf.write_output(f'{hostname}: Password reset error: {e}')
+        return False
+
+
+def remediate_vcenter_password_in_sddc(vcenter_fqdn: str,
+                                        password: str) -> bool:
+    """
+    Update the stored vCenter root SSH password in SDDC Manager.
+
+    Uses the REMEDIATE operation to tell SDDC Manager that the external
+    password has already been changed, so it should update its DB record
+    without attempting to change the password on the target.
+
+    :param vcenter_fqdn: vCenter FQDN
+    :param password: The (now-current) password to store
+    :return: True if successful
+    """
+    sddc_host = 'sddcmanager-a.site-a.vcf.lab'
+
+    try:
+        token = _get_sddc_bearer_token(sddc_host, password)
+        if not token:
+            lsf.write_output(f'{vcenter_fqdn}: Could not get SDDC Manager token '
+                             f'for REMEDIATE')
+            return False
+
+        headers = {
+            'Authorization': f'Bearer {token}',
+            'Content-Type': 'application/json'
+        }
+        payload = {
+            'operationType': 'REMEDIATE',
+            'elements': [{
+                'resourceName': vcenter_fqdn,
+                'resourceType': 'VCENTER',
+                'credentials': [{
+                    'credentialType': 'SSH',
+                    'username': 'root',
+                    'password': password
+                }]
+            }]
+        }
+        resp = requests.patch(
+            f'https://{sddc_host}/v1/credentials',
+            json=payload, headers=headers, verify=False, timeout=60
+        )
+        if resp.status_code in (200, 202):
+            task_id = resp.json().get('id', '')
+            lsf.write_output(f'{vcenter_fqdn}: SDDC Manager REMEDIATE submitted '
+                             f'(task {task_id})')
+            if task_id:
+                for _ in range(24):
+                    time.sleep(5)
+                    try:
+                        tr = requests.get(
+                            f'https://{sddc_host}/v1/tasks/{task_id}',
+                            headers=headers, verify=False, timeout=15
+                        )
+                        if tr.status_code == 200:
+                            status = tr.json().get('status', '')
+                            if status in ('Successful', 'SUCCESSFUL'):
+                                lsf.write_output(
+                                    f'{vcenter_fqdn}: SDDC Manager credential '
+                                    f'updated successfully')
+                                return True
+                            if status in ('Failed', 'FAILED'):
+                                lsf.write_output(
+                                    f'{vcenter_fqdn}: SDDC Manager REMEDIATE '
+                                    f'task failed')
+                                return False
+                    except Exception:
+                        pass
+            return True
+        else:
+            lsf.write_output(f'{vcenter_fqdn}: SDDC Manager REMEDIATE failed '
+                             f'(HTTP {resp.status_code})')
+            return False
+    except Exception as e:
+        lsf.write_output(f'{vcenter_fqdn}: SDDC Manager REMEDIATE error: {e}')
         return False
 
 
@@ -1374,6 +1857,50 @@ def set_nsx_edge_password_expiration(edge_hostname: str, nsx_manager: str,
         return False
 
 
+def _set_nsx_additional_user_expiration(hostname: str, password: str,
+                                         dry_run: bool = False) -> None:
+    """
+    Discover NSX users beyond root/admin/audit and set non-expiring passwords.
+
+    Some VCF deployments create ``svc*`` accounts on NSX Managers that also
+    need non-expiring passwords for lab environments.
+
+    :param hostname: NSX Manager hostname
+    :param password: Admin password for API auth
+    :param dry_run: If True, preview only
+    """
+    known_users = set(NSX_USERS)
+    try:
+        resp = requests.get(
+            f'https://{hostname}/api/v1/node/users',
+            auth=('admin', password), verify=False, timeout=30
+        )
+        if resp.status_code != 200:
+            lsf.write_output(f'{hostname}: Could not list NSX users '
+                             f'(HTTP {resp.status_code})')
+            return
+
+        for u in resp.json().get('results', []):
+            username = u.get('username', '')
+            user_id = u.get('userid')
+            if username in known_users or user_id is None:
+                continue
+            freq = u.get('password_change_frequency')
+            if freq is not None and freq != NSX_PASSWORD_EXPIRY_DAYS:
+                lsf.write_output(f'{hostname}: Found additional user '
+                                 f'"{username}" (id={user_id}, '
+                                 f'expiry={freq}d)')
+                set_nsx_password_expiration_via_api(
+                    hostname, password, user_id, username,
+                    NSX_PASSWORD_EXPIRY_DAYS, dry_run)
+            elif freq == NSX_PASSWORD_EXPIRY_DAYS:
+                lsf.write_output(f'{hostname}: User "{username}" already '
+                                 f'non-expiring — OK')
+    except Exception as e:
+        lsf.write_output(f'{hostname}: Error discovering additional NSX '
+                         f'users: {e}')
+
+
 def configure_nsx_manager(hostname: str, auth_keys_file: str, password: str,
                           dry_run: bool = False,
                           non_interactive: bool = False) -> bool:
@@ -1386,6 +1913,7 @@ def configure_nsx_manager(hostname: str, auth_keys_file: str, password: str,
        (with SDDC Manager rotated-password fallback)
     3. Configures SSH to start on boot
     4. Sets 9999-day password expiration for admin, root, audit via REST API
+    5. Discovers additional users (svc*, etc.) and sets non-expiring passwords
     
     :param hostname: NSX Manager hostname
     :param auth_keys_file: Path to authorized_keys file
@@ -1438,7 +1966,7 @@ def configure_nsx_manager(hostname: str, auth_keys_file: str, password: str,
         # Step 3: Configure SSH to start on boot
         configure_nsx_ssh_start_on_boot(hostname, password, dry_run)
         
-        # Step 4: Set password expiration via REST API
+        # Step 4: Set password expiration via REST API for known users
         for user in NSX_USERS:
             user_id = NSX_USER_ID_MAP.get(user)
             if user_id is not None:
@@ -1446,12 +1974,16 @@ def configure_nsx_manager(hostname: str, auth_keys_file: str, password: str,
                                                     NSX_PASSWORD_EXPIRY_DAYS, dry_run)
             else:
                 lsf.write_output(f'{hostname}: WARNING - Unknown NSX user {user}, skipping')
+
+        # Step 5: Discover additional users (svc* etc.) and set non-expiring
+        _set_nsx_additional_user_expiration(hostname, password, dry_run)
     else:
         lsf.write_output(f'{hostname}: Would enable SSH via API')
         lsf.write_output(f'{hostname}: Would copy authorized_keys (with SDDC Manager password fallback)')
         lsf.write_output(f'{hostname}: Would configure SSH start-on-boot')
         for user in NSX_USERS:
             lsf.write_output(f'{hostname}: Would set {NSX_PASSWORD_EXPIRY_DAYS}-day password expiration for {user}')
+        lsf.write_output(f'{hostname}: Would discover and configure additional NSX users (svc*, etc.)')
     
     return success
 
@@ -1787,28 +2319,34 @@ def configure_sddc_manager(auth_keys_file: str, password: str,
     # This is the preferred method as it handles key format and permissions
     lsf.write_output(f'{sddcmgr}: Copying SSH keys for {vcf_user} user using ssh-copy-id...')
     
-    # Try Manager key first
+    # Try Manager key first (use subprocess.run with shell=True to avoid
+    # lsf.run_command splitting the quoted password on spaces)
     manager_key = PUBLIC_KEY_FILE
     if os.path.isfile(manager_key):
-        # Use sshpass with ssh-copy-id
-        cmd = f'sshpass -p "{password}" ssh-copy-id -o StrictHostKeyChecking=no -i {manager_key} {vcf_user}@{sddcmgr}'
-        result = lsf.run_command(cmd)
+        cmd = (f'sshpass -p "{password}" ssh-copy-id '
+               f'-o StrictHostKeyChecking=no -i {manager_key} '
+               f'{vcf_user}@{sddcmgr}')
+        result = subprocess.run(cmd, shell=True, capture_output=True,
+                                text=True, timeout=30)
         if result.returncode == 0:
             lsf.write_output(f'{sddcmgr}: SUCCESS - Manager SSH key copied for {vcf_user}')
         else:
             lsf.write_output(f'{sddcmgr}: FAILED - Could not copy Manager SSH key')
             lsf.write_output(f'{sddcmgr}:         User: {vcf_user}, Password provided: {"yes" if password else "no"}')
-            stderr_out = getattr(result, 'stderr', '') or ''
+            stderr_out = (result.stderr or '').strip()[:100]
             if stderr_out:
-                lsf.write_output(f'{sddcmgr}:         Error: {str(stderr_out).strip()[:100]}')
+                lsf.write_output(f'{sddcmgr}:         Error: {stderr_out}')
             success = False
-    
+
     # Also copy LMC key if available
     lmc_key_file = '/lmchol/home/holuser/.ssh/id_rsa.pub'
     if os.path.isfile(lmc_key_file):
         lsf.write_output(f'{sddcmgr}: Copying LMC SSH key for {vcf_user} user...')
-        cmd = f'sshpass -p "{password}" ssh-copy-id -o StrictHostKeyChecking=no -i {lmc_key_file} {vcf_user}@{sddcmgr}'
-        result = lsf.run_command(cmd)
+        cmd = (f'sshpass -p "{password}" ssh-copy-id '
+               f'-o StrictHostKeyChecking=no -i {lmc_key_file} '
+               f'{vcf_user}@{sddcmgr}')
+        result = subprocess.run(cmd, shell=True, capture_output=True,
+                                text=True, timeout=30)
         if result.returncode == 0:
             lsf.write_output(f'{sddcmgr}: SUCCESS - LMC SSH key copied for {vcf_user}')
         else:
@@ -1887,72 +2425,139 @@ def configure_operations_vms(auth_keys_file: str, password: str,
         lsf.write_output('')
         lsf.write_output(f'{opsvm}: Starting configuration...')
         vm_success = True
-        
+
         if not dry_run:
-            # First, check if the host is reachable
             lsf.write_output(f'{opsvm}: Checking connectivity...')
             if not lsf.test_ping(opsvm):
-                lsf.write_output(f'{opsvm}: FAILED - Host is not reachable (ping failed)')
-                overall_success = False
+                lsf.write_output(f'{opsvm}: SKIPPED - Host is not reachable (ping failed)')
                 continue
             lsf.write_output(f'{opsvm}: SUCCESS - Host is reachable')
-            
-            # Check if SSH port is open
+
             if not lsf.test_tcp_port(opsvm, 22):
-                lsf.write_output(f'{opsvm}: FAILED - SSH port 22 is not open')
-                overall_success = False
+                lsf.write_output(f'{opsvm}: SKIPPED - SSH port 22 is not open '
+                                 f'(some Operations VMs do not expose SSH)')
                 continue
             lsf.write_output(f'{opsvm}: SUCCESS - SSH port 22 is open')
-            
+
+            # Determine working SSH user and effective password.
+            # First try the standard lab password, then retrieve the actual
+            # (possibly rotated) password from SDDC Manager credentials API.
+            ssh_user = None
+            effective_pw = password
+            passwords_to_try = [password]
+
+            # Retrieve rotated password from SDDC Manager
+            sddc_pw = get_ops_vm_password_from_sddc(opsvm, password)
+            if sddc_pw and sddc_pw != password:
+                passwords_to_try.append(sddc_pw)
+
+            for pw in passwords_to_try:
+                for candidate_user in ['root', 'vmware-system-user', 'vcf']:
+                    test_cmd = (f'sshpass -p "{pw}" ssh '
+                                f'-o StrictHostKeyChecking=no '
+                                f'-o UserKnownHostsFile=/dev/null '
+                                f'-o ConnectTimeout=10 '
+                                f'{candidate_user}@{opsvm} "echo SSH_OK"')
+                    try:
+                        test_result = subprocess.run(
+                            test_cmd, shell=True, capture_output=True,
+                            text=True, timeout=20)
+                        if 'SSH_OK' in (test_result.stdout or ''):
+                            ssh_user = candidate_user
+                            effective_pw = pw
+                            break
+                    except subprocess.TimeoutExpired:
+                        continue
+                if ssh_user:
+                    break
+
+            if not ssh_user:
+                lsf.write_output(f'{opsvm}: SKIPPED - Could not authenticate '
+                                 f'as root, vmware-system-user, or vcf')
+                continue
+
+            rotated = (effective_pw != password)
+            lsf.write_output(f'{opsvm}: SSH authenticated as {ssh_user}'
+                             f'{" (rotated password)" if rotated else ""}')
+
+            # If the password was rotated, reset it to the lab standard
+            if rotated and ssh_user == 'root':
+                lsf.write_output(f'{opsvm}: Resetting root password to lab standard...')
+                passwd_cmd = (
+                    f'sshpass -p "{effective_pw}" ssh '
+                    f'-o StrictHostKeyChecking=no '
+                    f'-o UserKnownHostsFile=/dev/null '
+                    f'{ssh_user}@{opsvm} '
+                    f'"echo \'root:{password}\' | chpasswd"'
+                )
+                try:
+                    result = subprocess.run(passwd_cmd, shell=True,
+                                            capture_output=True, text=True,
+                                            timeout=20)
+                    if result.returncode == 0:
+                        lsf.write_output(f'{opsvm}: SUCCESS - Root password reset '
+                                         f'to lab standard')
+                        effective_pw = password
+                    else:
+                        lsf.write_output(f'{opsvm}: WARNING - Password reset failed '
+                                         f'(rc={result.returncode})')
+                except subprocess.TimeoutExpired:
+                    lsf.write_output(f'{opsvm}: WARNING - Password reset timed out')
+
             # Set non-expiring password for root
-            lsf.write_output(f'{opsvm}: Setting non-expiring password for root...')
-            result = lsf.ssh('chage -M -1 root', f'root@{opsvm}', password)
-            if result.returncode == 0:
-                lsf.write_output(f'{opsvm}: SUCCESS - Non-expiring password set for root')
-            elif result.returncode == 255:
-                lsf.write_output(f'{opsvm}: FAILED - SSH connection failed')
-                lsf.write_output(f'{opsvm}:         User: root, Password provided: {"yes" if password else "no"}')
-                lsf.write_output(f'{opsvm}:         This may indicate invalid credentials')
-                vm_success = False
-            elif 'permission denied' in str(getattr(result, 'stderr', '') or '').lower():
-                lsf.write_output(f'{opsvm}: FAILED - Permission denied (invalid credentials)')
-                lsf.write_output(f'{opsvm}:         User: root')
-                vm_success = False
+            if ssh_user == 'root':
+                chage_cmd = 'chage -M -1 root'
             else:
-                lsf.write_output(f'{opsvm}: FAILED - chage command failed (exit code: {result.returncode})')
-                stderr_out = getattr(result, 'stderr', '') or ''
-                if stderr_out:
-                    lsf.write_output(f'{opsvm}:         Error: {str(stderr_out).strip()[:100]}')
+                chage_cmd = 'sudo chage -M -1 root'
+
+            lsf.write_output(f'{opsvm}: Setting non-expiring password for root...')
+            chage_full = (f'sshpass -p "{effective_pw}" ssh '
+                          f'-o StrictHostKeyChecking=no '
+                          f'-o UserKnownHostsFile=/dev/null '
+                          f'{ssh_user}@{opsvm} "{chage_cmd}"')
+            try:
+                result = subprocess.run(chage_full, shell=True,
+                                        capture_output=True, text=True,
+                                        timeout=20)
+                if result.returncode == 0:
+                    lsf.write_output(f'{opsvm}: SUCCESS - Non-expiring password set for root')
+                else:
+                    lsf.write_output(f'{opsvm}: WARNING - chage failed '
+                                     f'(rc={result.returncode})')
+                    vm_success = False
+            except subprocess.TimeoutExpired:
+                lsf.write_output(f'{opsvm}: WARNING - chage timed out')
                 vm_success = False
-            
+
             # Copy authorized_keys
             lsf.write_output(f'{opsvm}: Copying authorized_keys...')
-            result = lsf.scp(auth_keys_file, f'root@{opsvm}:{LINUX_AUTH_FILE}', password)
-            if result.returncode == 0:
-                lsf.write_output(f'{opsvm}: SUCCESS - authorized_keys copied')
-                # Set proper permissions
-                chmod_result = lsf.ssh(f'chmod 600 {LINUX_AUTH_FILE}', f'root@{opsvm}', password)
-                if chmod_result.returncode == 0:
-                    lsf.write_output(f'{opsvm}: SUCCESS - authorized_keys permissions set (chmod 600)')
-                else:
-                    lsf.write_output(f'{opsvm}: WARNING - Failed to set permissions on authorized_keys')
-            elif result.returncode == 255 or 'permission denied' in str(getattr(result, 'stderr', '') or '').lower():
-                lsf.write_output(f'{opsvm}: FAILED - SCP failed (authentication error)')
-                lsf.write_output(f'{opsvm}:         User: root, Password provided: {"yes" if password else "no"}')
-                vm_success = False
+            if ssh_user == 'root':
+                scp_target = f'root@{opsvm}:{LINUX_AUTH_FILE}'
             else:
-                lsf.write_output(f'{opsvm}: FAILED - SCP failed (exit code: {result.returncode})')
-                stderr_out = getattr(result, 'stderr', '') or ''
-                if stderr_out:
-                    lsf.write_output(f'{opsvm}:         Error: {str(stderr_out).strip()[:100]}')
+                scp_target = f'{ssh_user}@{opsvm}:~/.ssh/authorized_keys'
+
+            scp_cmd = (f'sshpass -p "{effective_pw}" scp '
+                       f'-o StrictHostKeyChecking=no '
+                       f'-o UserKnownHostsFile=/dev/null '
+                       f'{auth_keys_file} {scp_target}')
+            try:
+                result = subprocess.run(scp_cmd, shell=True,
+                                        capture_output=True, text=True,
+                                        timeout=20)
+                if result.returncode == 0:
+                    lsf.write_output(f'{opsvm}: SUCCESS - authorized_keys copied')
+                else:
+                    lsf.write_output(f'{opsvm}: WARNING - SCP failed '
+                                     f'(rc={result.returncode})')
+                    vm_success = False
+            except subprocess.TimeoutExpired:
+                lsf.write_output(f'{opsvm}: WARNING - SCP timed out')
                 vm_success = False
-            
-            # Summary for this VM
+
             if vm_success:
                 lsf.write_output(f'{opsvm}: Configuration completed successfully')
             else:
-                lsf.write_output(f'{opsvm}: Configuration completed with errors')
-                overall_success = False
+                lsf.write_output(f'{opsvm}: Configuration completed with warnings')
         else:
             lsf.write_output(f'{opsvm}: Would check connectivity (ping, SSH port)')
             lsf.write_output(f'{opsvm}: Would set non-expiring password for root')
@@ -2941,7 +3546,12 @@ def clear_sddc_stale_locks_and_fix_statuses(sddc_host: str, password: str,
             lsf.write_output(f'{sddc_host}: Could not retrieve PostgreSQL password')
             return False
 
-        # Build and upload the remediation script
+        # Build and upload the remediation script.
+        # In addition to clearing locks and fixing statuses in the platform DB,
+        # we also clear stale credential tasks from the operationsmanager DB.
+        # These stale tasks (from previous failed/timed-out credential ops)
+        # count toward the 10-task concurrency limit and block new operations
+        # with HTTP 403 "maximum number of 10 concurrent update/rotate".
         fix_script = (
             '#!/bin/bash\n'
             f"export PGPASSWORD='{pgpass}'\n"
@@ -2967,6 +3577,33 @@ def clear_sddc_stale_locks_and_fix_statuses(sddc_host: str, password: str,
             '$PSQL -d platform -c '
             '"UPDATE nsxt_edge_cluster SET status = \'ACTIVE\' '
             'WHERE status NOT IN (\'ACTIVE\')" >> $OUT 2>&1\n'
+            '\n'
+            'echo "=== CLEAR STALE CREDENTIAL TASKS ===" >> $OUT 2>&1\n'
+            '$PSQL -d operationsmanager -t -c '
+            '"SELECT count(*) FROM processing_task" >> $OUT 2>&1\n'
+            '$PSQL -d operationsmanager -c '
+            '"DELETE FROM processing_task" >> $OUT 2>&1\n'
+            '$PSQL -d operationsmanager -c '
+            '"UPDATE task SET state = \'COMPLETED_WITH_FAILURE\' '
+            'WHERE state IN (\'IN_PROGRESS\', \'PENDING\', \'NOT_STARTED\')" >> $OUT 2>&1\n'
+            '\n'
+            'echo "=== CLEAR DOMAINMANAGER STALE TASKS ===" >> $OUT 2>&1\n'
+            '$PSQL -d domainmanager -t -c '
+            '"SELECT count(*) FROM processing_task" >> $OUT 2>&1\n'
+            '$PSQL -d domainmanager -c '
+            '"DELETE FROM processing_task" >> $OUT 2>&1\n'
+            '\n'
+            'echo "=== CLEAR STALE PLATFORM TASKS ===" >> $OUT 2>&1\n'
+            '$PSQL -d platform -t -c '
+            '"SELECT count(*) FROM task_metadata" >> $OUT 2>&1\n'
+            '$PSQL -d platform -c '
+            '"DELETE FROM task_and_subtask_and_resource_warning" >> $OUT 2>&1\n'
+            '$PSQL -d platform -c '
+            '"DELETE FROM entity_and_task" >> $OUT 2>&1\n'
+            '$PSQL -d platform -c '
+            '"DELETE FROM task_and_entity_type_and_entity" >> $OUT 2>&1\n'
+            '$PSQL -d platform -c '
+            '"DELETE FROM task_metadata" >> $OUT 2>&1\n'
             '\n'
             'echo "=== RESTART SERVICES ===" >> $OUT 2>&1\n'
             'systemctl restart operationsmanager commonsvcs domainmanager '
@@ -3013,19 +3650,49 @@ def clear_sddc_stale_locks_and_fix_statuses(sddc_host: str, password: str,
                 resp = requests.get(info.url, verify=False, timeout=10)
                 output = resp.text
 
-            # Parse lock count
+            # Parse counts from output sections
             lock_count = '?'
+            task_count = '?'
+            dm_task_count = '?'
+            pw_task_count = '?'
+            current_section = None
             for line in output.splitlines():
-                line = line.strip()
-                if line.isdigit():
-                    lock_count = line
-                    break
+                stripped = line.strip()
+                if 'LOCKS BEFORE' in stripped:
+                    current_section = 'locks'
+                    continue
+                if 'CLEAR STALE CREDENTIAL TASKS' in stripped:
+                    current_section = 'tasks'
+                    continue
+                if 'CLEAR DOMAINMANAGER STALE TASKS' in stripped:
+                    current_section = 'dm_tasks'
+                    continue
+                if 'CLEAR STALE PLATFORM TASKS' in stripped:
+                    current_section = 'pw_tasks'
+                    continue
+                if stripped.startswith('==='):
+                    current_section = None
+                    continue
+                if current_section == 'locks' and stripped.isdigit():
+                    lock_count = stripped
+                    current_section = None
+                if current_section == 'tasks' and stripped.isdigit():
+                    task_count = stripped
+                    current_section = None
+                if current_section == 'dm_tasks' and stripped.isdigit():
+                    dm_task_count = stripped
+                    current_section = None
+                if current_section == 'pw_tasks' and stripped.isdigit():
+                    pw_task_count = stripped
+                    current_section = None
 
             # Count DB updates
             updates = output.count('UPDATE')
 
-            lsf.write_output(f'{sddc_host}: Cleared {lock_count} stale lock(s), '
-                             f'applied {updates} status fix(es), '
+            lsf.write_output(f'{sddc_host}: Cleared {lock_count} lock(s), '
+                             f'{task_count}+{dm_task_count} processing_task(s), '
+                             f'{pw_task_count} task_metadata, '
+                             f'{updates} status fix(es), '
                              f'services restarted')
 
         except Exception as e:
@@ -3047,6 +3714,177 @@ def clear_sddc_stale_locks_and_fix_statuses(sddc_host: str, password: str,
             connect.Disconnect(si)
         except Exception:
             pass
+
+
+#==============================================================================
+# VCF OPERATIONS PASSWORD POLICY DISABLE
+#==============================================================================
+
+def disable_ops_password_policies(dry_run: bool = False) -> bool:
+    """
+    Disable or maximise password management policies on VCF Operations.
+
+    VCF 9.1+ exposes ``/suite-api/internal/passwordmanagement/policies/*``
+    endpoints. This function queries existing policies, sets their expiration
+    to the maximum allowed (729 days), and assigns the policy to VCF
+    Management so rotation is effectively disabled for the lab.
+
+    On VCF 9.0 the endpoint returns 404 — the function logs and returns True.
+
+    :param dry_run: If True, preview only
+    :return: True if successful or not applicable
+    """
+    import urllib3
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+    ops_host = 'ops-a.site-a.vcf.lab'
+
+    lsf.write_output('')
+    lsf.write_output('=' * 60)
+    lsf.write_output('VCF Operations Password Policy Configuration')
+    lsf.write_output('=' * 60)
+
+    if dry_run:
+        lsf.write_output('Would disable/maximise password management policies')
+        return True
+
+    if not lsf.test_ping(ops_host):
+        lsf.write_output(f'{ops_host}: Not reachable — skipping')
+        return True
+
+    password = get_lab_password()
+
+    # Acquire OpsToken (try both authSource values)
+    token = None
+    for auth_src in ('local', 'localItem'):
+        try:
+            resp = requests.post(
+                f'https://{ops_host}/suite-api/api/auth/token/acquire',
+                json={'username': 'admin', 'password': password,
+                      'authSource': auth_src},
+                headers={'X-vRealizeOps-API-use-unsupported': 'true'},
+                verify=False, timeout=30
+            )
+            if resp.status_code == 200:
+                token = resp.json().get('token', '')
+                if token:
+                    break
+        except Exception:
+            continue
+
+    if not token:
+        lsf.write_output(f'{ops_host}: Could not acquire OpsToken — skipping')
+        return True
+
+    headers = {
+        'Authorization': f'OpsToken {token}',
+        'Content-Type': 'application/json',
+        'X-vRealizeOps-API-use-unsupported': 'true'
+    }
+
+    # Query existing policies
+    try:
+        resp = requests.post(
+            f'https://{ops_host}/suite-api/internal/'
+            f'passwordmanagement/policies/query',
+            json={'page': 0, 'pageSize': 100},
+            headers=headers, verify=False, timeout=30
+        )
+    except Exception as e:
+        lsf.write_output(f'{ops_host}: Policy query error: {e} — skipping')
+        return True
+
+    if resp.status_code == 404:
+        lsf.write_output(f'{ops_host}: Password management API not available '
+                         f'(VCF 9.0) — nothing to disable')
+        return True
+    if resp.status_code != 200:
+        lsf.write_output(f'{ops_host}: Policy query returned HTTP '
+                         f'{resp.status_code} — skipping')
+        return True
+
+    policies = resp.json().get('policies', resp.json().get('elements', []))
+    if not policies:
+        lsf.write_output(f'{ops_host}: No password policies found')
+    else:
+        lsf.write_output(f'{ops_host}: Found {len(policies)} password '
+                         f'policy(ies)')
+        for pol in policies:
+            pol_id = pol.get('id', pol.get('policyId', ''))
+            pol_name = pol.get('name', '?')
+            exp = pol.get('expiration_days', pol.get('expirationDays', '?'))
+            lsf.write_output(f'  - {pol_name}: expiration={exp}d (id={pol_id})')
+
+    # Get constraints to find max allowed expiration
+    max_expiry = 729
+    try:
+        cr = requests.get(
+            f'https://{ops_host}/suite-api/internal/'
+            f'passwordmanagement/policies/constraint',
+            headers=headers, verify=False, timeout=15
+        )
+        if cr.status_code == 200:
+            cd = cr.json()
+            max_expiry = cd.get('maxExpirationDays',
+                                cd.get('max_expiration_days', 729))
+            lsf.write_output(f'{ops_host}: Max allowed password expiration: '
+                             f'{max_expiry} days')
+    except Exception:
+        pass
+
+    # Create or update a policy with maximum expiration and assign it
+    lab_policy_name = 'HOL-NoExpire'
+    lab_policy_id = None
+
+    for pol in policies:
+        if pol.get('name') == lab_policy_name:
+            lab_policy_id = pol.get('id', pol.get('policyId'))
+            break
+
+    if not lab_policy_id:
+        lsf.write_output(f'{ops_host}: Creating "{lab_policy_name}" policy '
+                         f'with {max_expiry}-day expiration...')
+        try:
+            resp = requests.post(
+                f'https://{ops_host}/suite-api/internal/'
+                f'passwordmanagement/policies',
+                json={'name': lab_policy_name,
+                      'description': 'Lab policy — max expiration, no alerts',
+                      'expiration_days': max_expiry},
+                headers=headers, verify=False, timeout=30
+            )
+            if resp.status_code in (200, 201):
+                lab_policy_id = resp.json().get('id',
+                                                resp.json().get('policyId'))
+                lsf.write_output(f'{ops_host}: Policy created (id={lab_policy_id})')
+            else:
+                lsf.write_output(f'{ops_host}: Failed to create policy '
+                                 f'(HTTP {resp.status_code})')
+                return True
+        except Exception as e:
+            lsf.write_output(f'{ops_host}: Error creating policy: {e}')
+            return True
+
+    if lab_policy_id:
+        lsf.write_output(f'{ops_host}: Assigning "{lab_policy_name}" to '
+                         f'VCF Management group...')
+        try:
+            resp = requests.post(
+                f'https://{ops_host}/suite-api/internal/'
+                f'passwordmanagement/policies/{lab_policy_id}/assign',
+                json={'assignmentGroup': ['MANAGEMENT']},
+                headers=headers, verify=False, timeout=30
+            )
+            if resp.status_code in (200, 204):
+                lsf.write_output(f'{ops_host}: Policy assigned successfully')
+            else:
+                lsf.write_output(f'{ops_host}: Policy assignment returned '
+                                 f'HTTP {resp.status_code}')
+        except Exception as e:
+            lsf.write_output(f'{ops_host}: Policy assignment error: {e}')
+
+    lsf.write_output(f'{ops_host}: Password policy configuration complete')
+    return True
 
 
 #==============================================================================
@@ -3160,10 +3998,24 @@ def disable_sddc_auto_rotate(dry_run: bool = False) -> bool:
     }
 
     # Step 2: Get all credentials and find those with auto-rotate policies
+    # The credentials endpoint may return 502 briefly after service restart
     lsf.write_output(f'{sddc_host}: Checking for credentials with auto-rotate policies...')
     try:
         creds_url = f'https://{sddc_host}/v1/credentials'
-        response = requests.get(creds_url, headers=headers, verify=False, timeout=30)
+        response = None
+        for cred_attempt in range(6):
+            response = requests.get(creds_url, headers=headers,
+                                    verify=False, timeout=30)
+            if response.status_code == 200:
+                break
+            if response.status_code in (502, 503):
+                lsf.write_output(f'{sddc_host}: Credentials API returned '
+                                 f'HTTP {response.status_code} — '
+                                 f'retrying in 10s ({cred_attempt + 1}/6)')
+                time.sleep(10)
+            else:
+                break
+
         if response.status_code != 200:
             lsf.write_output(f'{sddc_host}: Failed to get credentials (HTTP {response.status_code})')
             return False
@@ -3208,6 +4060,7 @@ def disable_sddc_auto_rotate(dry_run: bool = False) -> bool:
 
     success = True
     tasks = []
+    concurrency_cleared = False
 
     for (resource_name, resource_type), credentials in resource_groups.items():
         lsf.write_output(f'{sddc_host}: Disabling auto-rotate for {resource_name} '
@@ -3230,6 +4083,74 @@ def disable_sddc_auto_rotate(dry_run: bool = False) -> bool:
                 creds_url, headers=headers, json=patch_body,
                 verify=False, timeout=30
             )
+
+            # HTTP 403 with "maximum number of 10 concurrent" means stale
+            # processing_tasks in operationsmanager DB are consuming all slots.
+            # Clear them and retry once.
+            if response.status_code == 403 and not concurrency_cleared:
+                error_msg = ''
+                try:
+                    error_msg = response.json().get('message', '')
+                except Exception:
+                    error_msg = response.text[:200]
+                if 'concurrent' in error_msg.lower() or 'maximum' in error_msg.lower():
+                    lsf.write_output(f'{sddc_host}: Concurrency limit hit — '
+                                     f'clearing stale tasks and retrying...')
+                    clear_sddc_stale_locks_and_fix_statuses(
+                        sddc_host, password, dry_run)
+                    concurrency_cleared = True
+
+                    # Wait for API after service restart — need to wait
+                    # for both /v1/tokens AND /v1/credentials to respond,
+                    # since nginx returns 502 before the backend is ready.
+                    lsf.write_output(f'{sddc_host}: Waiting for API to become '
+                                     f'responsive after task cleanup...')
+                    for _ in range(36):
+                        try:
+                            resp = requests.get(
+                                f'https://{sddc_host}/v1/tokens',
+                                verify=False, timeout=5)
+                            if resp.status_code in (200, 400, 401, 405):
+                                break
+                        except Exception:
+                            pass
+                        time.sleep(5)
+
+                    # Re-authenticate (token expired during restart)
+                    for token_user in ('admin@local',
+                                       'administrator@vsphere.local'):
+                        try:
+                            token_body = {'username': token_user,
+                                          'password': password}
+                            resp = requests.post(token_url, json=token_body,
+                                                 verify=False, timeout=30)
+                            if resp.status_code == 200:
+                                new_token = resp.json().get('accessToken', '')
+                                if new_token:
+                                    token = new_token
+                                    headers['Authorization'] = f'Bearer {token}'
+                                    break
+                        except Exception:
+                            continue
+
+                    # Wait for credentials API to be fully responsive
+                    # (may still return 502 even after /v1/tokens works)
+                    for cred_wait in range(12):
+                        try:
+                            resp = requests.get(
+                                creds_url, headers=headers,
+                                verify=False, timeout=10)
+                            if resp.status_code == 200:
+                                break
+                        except Exception:
+                            pass
+                        time.sleep(10)
+
+                    # Retry this resource
+                    response = requests.patch(
+                        creds_url, headers=headers, json=patch_body,
+                        verify=False, timeout=30
+                    )
 
             if response.status_code == 202:
                 task_data = response.json()
@@ -3670,32 +4591,34 @@ NOTE: NSX Edge SSH is enabled automatically via NSX Manager API.
     if not password:
         lsf.write_output('ERROR: No password available from creds.txt')
         sys.exit(1)
-    
-    # Step 2: Configure vCenters
+
+    # Step 2: Disable password policies and auto-rotate BEFORE touching
+    #         vCenter/NSX so that any rotated passwords can be reset back
+    #         to lab standard without being re-rotated immediately.
+    if 'VCF' in lsf.config or not args.esx_only:
+        disable_sddc_auto_rotate(args.dry_run)
+        disable_ops_password_policies(args.dry_run)
+
+    # Step 3: Configure vCenters
     for entry in vcenters:
         if not entry or entry.strip().startswith('#'):
             continue
         configure_vcenter(entry, auth_keys_file, password, 
                          args.skip_vcshell, args.dry_run, non_interactive)
-    
-    # Step 3: Configure NSX components
+
+    # Step 4: Configure NSX components
     configure_nsx_components(auth_keys_file, password, args.skip_nsx, args.dry_run,
                              non_interactive)
-    
-    # Step 4: Configure SDDC Manager
+
+    # Step 5: Configure SDDC Manager
     configure_sddc_manager(auth_keys_file, password, args.dry_run)
-    
-    # Step 5: Configure VCF Automation VMs
+
+    # Step 6: Configure VCF Automation VMs
     configure_aria_automation_vms(auth_keys_file, password, args.dry_run)
-    
-    # Step 6: Configure Operations VMs
+
+    # Step 7: Configure Operations VMs
     configure_operations_vms(auth_keys_file, password, args.dry_run)
-    
-    # Step 7: Disable SDDC Manager auto-rotate policies
-    # This prevents credential rotation failures when the lab template is deployed
-    if 'VCF' in lsf.config or not args.esx_only:
-        disable_sddc_auto_rotate(args.dry_run)
-    
+
     # Step 8: Final cleanup
     perform_final_cleanup(args.dry_run)
     

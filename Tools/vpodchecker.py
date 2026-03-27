@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 # vpodchecker.py - HOLFY27 Lab Validation Tool
-# Version 2.4 - March 2, 2026
+# Version 2.5 - March 27, 2026
 # Author - Burke Azbill and HOL Core Team
 # Modernized for HOLFY27 architecture with enhanced checks and reporting
 #
 # CHANGELOG:
+# v2.5 - 2026-03-27:
+#   - Fixed ESXi password expiration check: use subprocess.run(shell=True)
+#     instead of lsf.ssh() which splits pipes/redirects into argv elements,
+#     causing 'chage -l root 2>/dev/null | grep ...' to fail with exit 1
 # v2.4 - 2026-03-02:
 #   - VCF Password Policies: added SDDC Manager auto-rotate credential check
 #     for VCF 9.0 (falls back when VCF Ops internal API unavailable)
@@ -959,8 +963,8 @@ def get_linux_password_expiration(hostname: str, username: str, password: str,
     This is needed when the SSH user has sudo privileges but is not root
     (e.g., vmware-system-user on VCF Automation appliances).
     
-    Note: without use_sudo, 'chage -l' for a different user requires root.
-    Non-root SSH users can only query their own account.
+    Uses subprocess.run(shell=True) instead of lsf.ssh() because lsf.ssh()
+    splits the command into an argv array, breaking shell pipes and redirects.
     
     :param hostname: Target host
     :param username: Account to check expiration for
@@ -971,16 +975,18 @@ def get_linux_password_expiration(hostname: str, username: str, password: str,
     """
     try:
         if use_sudo:
-            cmd = f"echo '{password}' | sudo -S chage -l {username} 2>/dev/null"
+            remote_cmd = f"echo '{password}' | sudo -S chage -l {username} 2>/dev/null"
         else:
-            cmd = f"chage -l {username} 2>/dev/null | grep 'Password expires'"
-        result = lsf.ssh(cmd, f'{ssh_user}@{hostname}', password)
+            remote_cmd = f"chage -l {username} 2>/dev/null"
+        cmd = (
+            f"sshpass -p '{password}' ssh -o StrictHostKeyChecking=accept-new "
+            f"-o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "
+            f"{ssh_user}@{hostname} \"{remote_cmd}\""
+        )
+        result = subprocess.run(cmd, shell=True, capture_output=True,
+                                text=True, timeout=15)
         
-        output = ''
-        if hasattr(result, 'stdout') and result.stdout:
-            output = result.stdout.strip()
-        elif isinstance(result, str):
-            output = result.strip()
+        output = result.stdout.strip() if result.stdout else ''
         
         return _parse_chage_output(output)
     except Exception:
