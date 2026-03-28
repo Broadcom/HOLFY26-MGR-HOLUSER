@@ -115,8 +115,15 @@ while true;do
       mcholroot=${lmcholroot}
       desktopfile=/lmchol/home/holuser/desktop-hol/VMware.config
       [ "$1" != "labcheck" ] && cp /home/holuser/hol/Tools/VMware.config $desktopfile
-      LMC=true
-      break
+      # if /lmchol/tmp/XAUTHORITY exists, then run the next two steps
+      if [ -f /lmchol/tmp/XAUTHORITY ];then
+         echo "XAUTHORITY found. Running next two steps." >> ${logfile}
+         LMC=true
+         break
+      else
+         echo "Waiting for /lmchol/tmp/XAUTHORITY to appear..." >> ${logfile}
+         sleep 5
+      fi
    elif [ -d ${wmcholroot} ];then    
       echo "WMC detected." >> ${logfile}
       mcholroot=${wmcholroot}
