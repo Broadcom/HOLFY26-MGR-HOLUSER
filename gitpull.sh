@@ -28,7 +28,9 @@ while true;do
       echo "FATAL could not perform git pull." >> ${logfile}
       exit  # do we exit here or just report?
    fi
+   git stash
    git pull origin main >> ${logfile} 2>&1
+   git stash apply
    if [ $? = 0 ];then
       echo "" > /tmp/coregitdone
       break
