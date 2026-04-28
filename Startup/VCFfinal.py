@@ -1,7 +1,9 @@
-# VCFfinal.py version 1.3 02-May 2025
+# VCFfinal.py version 1.4 28-April 2026
 import datetime
 import os
 import sys
+import time
+import requests
 from pyVim import connect
 from pyVmomi import vim
 import logging
@@ -28,6 +30,73 @@ def verify_nic_connected (vm_obj, simple):
             lsf.write_output(f'Connecting {nic.deviceInfo.label} on {vm.name} .')
             lsf.set_network_adapter_connection(vm, nic, True)
 
+
+def _vcenter_delete_session(sess, vc_host, token):
+    try:
+        sess.delete(
+            f'https://{vc_host}/api/session',
+            headers={'vmware-api-session-id': token},
+            verify=False, timeout=15, proxies=None)
+    except Exception:
+        pass
+
+
+def check_supervisor_status_api(lsf, vc_host, vc_user):
+    """
+    Query vCenter REST API for WCP/Supervisor clusters.
+    Returns a list of dicts: cluster_name, config_status, kubernetes_status, api_servers.
+    """
+    sess = requests.Session()
+    sess.trust_env = False
+    token = None
+    try:
+        session_resp = sess.post(
+            f'https://{vc_host}/api/session',
+            auth=(vc_user, lsf.password),
+            verify=False, timeout=30, proxies=None)
+        if session_resp.status_code not in (200, 201):
+            lsf.write_output(
+                f'  {vc_host}: session POST returned HTTP {session_resp.status_code}')
+            return []
+        token = session_resp.text.strip().strip('"')
+        headers = {'vmware-api-session-id': token}
+        clusters_resp = sess.get(
+            f'https://{vc_host}/api/vcenter/namespace-management/clusters',
+            headers=headers, verify=False, timeout=60, proxies=None)
+        if clusters_resp.status_code != 200:
+            lsf.write_output(
+                f'  {vc_host}: namespace-management/clusters HTTP {clusters_resp.status_code}')
+            return []
+        rows = clusters_resp.json()
+        if not isinstance(rows, list):
+            return []
+        out = []
+        for item in rows:
+            name = item.get('cluster_name') or item.get('name') or str(
+                item.get('cluster', 'unknown'))
+            cfg = item.get('config_status', '') or ''
+            k8s = item.get('kubernetes_status', '') or ''
+            api_srv = []
+            eps = item.get('api_server_endpoints') or item.get('api_servers')
+            if isinstance(eps, list):
+                api_srv = [str(x) for x in eps if x]
+            elif isinstance(eps, str) and eps:
+                api_srv = [eps]
+            out.append({
+                'cluster_name': name,
+                'config_status': cfg,
+                'kubernetes_status': k8s,
+                'api_servers': api_srv,
+            })
+        return out
+    except Exception as ex:
+        lsf.write_output(f'  {vc_host}: Supervisor API error: {ex}')
+        return []
+    finally:
+        if token:
+            _vcenter_delete_session(sess, vc_host, token)
+
+
 # read the /hol/config.ini
 lsf.init(router=False)
 
@@ -51,7 +120,7 @@ lsf.write_vpodprogress('Tanzu Start', 'GOOD-8', color=color)
 
 ### Start SupervisorControlPlaneVMs
 vcfmgmtcluster = []
-if 'vcfmgmtcluster' in lsf.config['VCF'].keys():
+if lsf.config.has_section('VCF') and 'vcfmgmtcluster' in lsf.config['VCF'].keys():
     vcfmgmtcluster = lsf.config.get('VCF', 'vcfmgmtcluster').split('\n')
     lsf.write_vpodprogress('VCF Hosts Connect', 'GOOD-3', color=color)
     lsf.connect_vcenters(vcfmgmtcluster)
@@ -75,7 +144,141 @@ for vm in supvms:
 if supvms:
     lsf.write_output(f'Restarting Supervisor Webhooks')
     lsf.run_command("/home/holuser/hol/Tools/restart_k8s_webhooks.sh")
-                
+
+# ----------------------------------------------------------------------
+# VVF901-MicroPod: verify Supervisor control plane on all vCenters (REST)
+# Polls until all clusters RUNNING+READY or labfail on ERROR / timeout.
+# ----------------------------------------------------------------------
+if lsf.lab_sku == 'VVF901-MicroPod':
+    WCP_POLL_INTERVAL = 30
+    WCP_MAX_POLL_TIME = 3600
+
+    vcenters_list = []
+    if lsf.config.has_section('RESOURCES') and 'vCenters' in lsf.config['RESOURCES'].keys():
+        for vc_line in lsf.config.get('RESOURCES', 'vCenters').split('\n'):
+            line = vc_line.strip()
+            if not line or line.startswith('#'):
+                continue
+            vcenters_list.append(line)
+
+    if not vcenters_list:
+        lsf.labfail('VVF901-MicroPod: no vCenters in [RESOURCES] to verify Supervisor')
+
+    lsf.write_output('=' * 60)
+    lsf.write_output('Verifying Supervisor Control Plane Status (Multi-vCenter)')
+    lsf.write_output('=' * 60)
+    lsf.write_vpodprogress('Tanzu Control Plane', 'GOOD-3', color=color)
+
+    vcenter_targets = []
+    for vc_line in vcenters_list:
+        vc_parts = vc_line.split(':')
+        vc_host = vc_parts[0].strip()
+        vc_sso_domain = 'vsphere.local'
+        vc_user = 'administrator@vsphere.local'
+        if len(vc_parts) >= 3:
+            user_part = vc_parts[2].strip()
+            vc_user = user_part
+            if '@' in user_part:
+                vc_sso_domain = user_part.split('@', 1)[1]
+        vcenter_targets.append({
+            'host': vc_host,
+            'sso_domain': vc_sso_domain,
+            'user': vc_user,
+        })
+
+    lsf.write_output(f'Will check {len(vcenter_targets)} vCenter(s) for supervisors:')
+    for target in vcenter_targets:
+        lsf.write_output(
+            f'  - {target["host"]} (SSO: {target["sso_domain"]})')
+
+    supervisor_start_time = time.time()
+    last_overall_status = 'No supervisors found'
+    tanzu_verify_ok = False
+
+    try:
+        while (time.time() - supervisor_start_time) < WCP_MAX_POLL_TIME:
+            elapsed = int(time.time() - supervisor_start_time)
+
+            all_supervisor_clusters = {}
+            total_clusters = 0
+            ready_clusters = 0
+            error_clusters = 0
+
+            for target in vcenter_targets:
+                vc_host = target['host']
+                vc_user = target['user']
+
+                sup_clusters = check_supervisor_status_api(lsf, vc_host, vc_user)
+
+                if sup_clusters:
+                    all_supervisor_clusters[vc_host] = sup_clusters
+                    total_clusters += len(sup_clusters)
+
+                    for cluster in sup_clusters:
+                        config_status = cluster.get('config_status', '')
+                        k8s_status = cluster.get('kubernetes_status', '')
+
+                        if config_status == 'RUNNING' and k8s_status == 'READY':
+                            ready_clusters += 1
+                        elif config_status == 'ERROR':
+                            error_clusters += 1
+
+            if total_clusters == 0:
+                lsf.write_output(
+                    f'  No supervisor clusters found on any vCenter - waiting... '
+                    f'({elapsed}s / {WCP_MAX_POLL_TIME}s)')
+                last_overall_status = 'No supervisor clusters found'
+            else:
+                lsf.write_output(
+                    f'  Found {total_clusters} supervisor cluster(s): '
+                    f'{ready_clusters} ready, {error_clusters} error, '
+                    f'{total_clusters - ready_clusters - error_clusters} pending '
+                    f'({elapsed}s / {WCP_MAX_POLL_TIME}s)')
+
+                for vc_host, clusters in all_supervisor_clusters.items():
+                    for cluster in clusters:
+                        config_status = cluster.get('config_status', '')
+                        k8s_status = cluster.get('kubernetes_status', '')
+                        cluster_name = cluster.get('cluster_name', 'unknown')
+                        api_servers = cluster.get('api_servers', [])
+
+                        status_str = f'config={config_status}, k8s={k8s_status}'
+                        lsf.write_output(
+                            f'    {vc_host}: "{cluster_name}" -> {status_str}')
+
+                        if api_servers and config_status == 'RUNNING' and k8s_status == 'READY':
+                            lsf.write_output(
+                                f'      API servers: {", ".join(api_servers)}')
+
+                last_overall_status = (
+                    f'{ready_clusters}/{total_clusters} ready, {error_clusters} error')
+
+                if error_clusters > 0:
+                    lsf.labfail(
+                        f'VVF901-MicroPod: {error_clusters} supervisor cluster(s) in ERROR '
+                        f'({last_overall_status})')
+
+                if ready_clusters == total_clusters and total_clusters > 0:
+                    lsf.write_output(
+                        f'All {total_clusters} supervisor cluster(s) are RUNNING and READY!')
+                    tanzu_verify_ok = True
+                    break
+
+            time.sleep(WCP_POLL_INTERVAL)
+
+        if not tanzu_verify_ok:
+            lsf.labfail(
+                f'VVF901-MicroPod: Supervisors did not reach RUNNING/READY within '
+                f'{WCP_MAX_POLL_TIME // 60} minutes. Final status: {last_overall_status}')
+
+    except SystemExit:
+        raise
+    except Exception as e:
+        lsf.write_output(f'Error verifying Supervisor status: {e}')
+        lsf.labfail(f'VVF901-MicroPod: Supervisor verification failed: {e}')
+
+    lsf.write_output('Supervisor Control Plane: All clusters RUNNING and READY')
+
 # Wizardry to deploy Tanzu
 
 tanzucreate = []
