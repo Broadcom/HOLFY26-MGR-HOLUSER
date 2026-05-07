@@ -167,7 +167,11 @@ if lsf.lab_sku == 'VVF901-MicroPod':
     lsf.write_output('=' * 60)
     lsf.write_output('Verifying Supervisor Control Plane Status (Multi-vCenter)')
     lsf.write_output('=' * 60)
-    lsf.write_vpodprogress('Tanzu Control Plane', 'GOOD-3', color=color)
+    lsf.write_vpodprogress('Supervisor Control Plane', 'GOOD-3', color=color)
+    
+    lsf.write_output(f'Restarting Supervisor Webhooks')
+    lsf.run_command("/home/holuser/hol/Tools/restart_k8s_webhooks.sh vc-mgmt-a.site-a.vcf.lab")
+    lsf.write_output(f'Supervisor Webhooks Restarted')
 
     vcenter_targets = []
     for vc_line in vcenters_list:
