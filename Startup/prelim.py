@@ -57,14 +57,6 @@ if lsf.labtype == "HOL":
     except Exception as e:
         lsf.write_output(f'Error updating README.txt: {e}')
 
-# prevent update manager from showing window for updates if LMC
-if lsf.LMC and lsf.labtype == 'HOL':
-    try:
-        lsf.write_output('Making sure updates are not showing on console...')
-        lsf.ssh(f'pkill update-manager;pkill update-notifier 2>&1', 'holuser@console', lsf.password)
-    except Exception as e:
-        lsf.write_output(f'exception: {e}')
-
 # prevent the annoying Firefox banner if WMC
 if lsf.WMC and lsf.labtype == 'HOL':
     appdata = f'{lsf.mc}/Users/Administrator/AppData'
