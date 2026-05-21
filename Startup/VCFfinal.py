@@ -351,6 +351,8 @@ if 'vraurls' in lsf.config['VCFFINAL'].keys():
     lsf.write_output('Fixing expired automation pw if necessary...')
     lsf.run_command("/home/holuser/hol/Tools/vcfapwcheck.sh")
     # Renew VCFA Kubernetes certificates to 5-year validity if any are expired
+    lsf.write_output('Waiting 10s for VCFA to stabilize before renewing K8s certs...')
+    lsf.labstartup_sleep(10)
     lsf.write_output('Copying k8s-renew-certs-5y.sh to VCFA (10.1.1.71)...')
     scp_cmd = [
         'sshpass', '-f', '/home/holuser/creds.txt',
