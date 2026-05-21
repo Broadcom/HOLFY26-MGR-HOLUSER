@@ -324,7 +324,7 @@ fi
 echo "" > /tmp/gitdone
 
 if [ -f ${configini} ];then
-   rm -rf /home/holuser/hol/Startup/__pycache__
+   rm -rf /home/holuser/hol/__pycache__
    runlabstartup
    echo "$0 finished." >> ${logfile}
 else
