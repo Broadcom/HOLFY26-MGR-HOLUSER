@@ -1,7 +1,7 @@
 #!/bin/bash
 # Author: Burke Azbill
-# Version: 1.3
-# Date: 2026-03-03
+# Version: 1.4
+# Date: 2026-05-21
 # Script to watch VCF Automation appliance for issues and remediate them
 # This script:
 # 1. Checks if the VCFA host is reachable via SSH
@@ -163,18 +163,8 @@ fi
   UNKNOWN_PODS=$(vcfa_ssh 'kubectl get pods -A --no-headers | grep Unknown | wc -l')
   if [ "$UNKNOWN_PODS" -gt 0 ]; then
     echo "[$(date +"%Y-%m-%d %H:%M:%S")]-> Found ${UNKNOWN_PODS} pods in Unknown state, force deleting..." | tee -a  "${LOGFILE}" >> "${CONSOLELOG}"
-    vcfa_ssh 'cat <<EOF > /tmp/del_unknown.py
-import subprocess
-out = subprocess.check_output(["kubectl", "get", "pods", "-A", "--no-headers"]).decode("utf-8")
-for line in out.splitlines():
-    if "Unknown" in line:
-        parts = line.split()
-        ns = parts[0]
-        pod = parts[1]
-        print(f"Deleting {ns}/{pod}")
-        subprocess.call(["kubectl", "delete", "pod", pod, "-n", ns, "--force", "--grace-period=0"])
-EOF
-python3 /tmp/del_unknown.py' | tee -a  "${LOGFILE}" >> "${CONSOLELOG}"
+    vcfa_ssh 'kubectl get pods -A --no-headers 2>/dev/null | grep Unknown | while read ns pod rest; do echo "Deleting $ns/$pod"; kubectl delete pod "$pod" -n "$ns" --force --grace-period=0 2>/dev/null; done' \
+      | tee -a  "${LOGFILE}" >> "${CONSOLELOG}"
   fi
 
   ###### CAPI/CAPV Webhook/CNI check/fix ######
@@ -474,46 +464,3 @@ print('Patched')
     fi
   fi
   
-
-  # CNT=0
-  # while [[ "$POSTGRES" != "2/2" ]]; do 
-  #   sleep 60;
-	#   POSTGRES=$(sshpass -f /home/holuser/creds.txt ssh vmware-system-user@10.1.1.71 "sudo -i bash -c 'kubectl get pods -n prelude -s ${K8S_API}'" | grep vcfapostgres-0 | awk '{ print $2 }')
-	#   ((CNT++))
-  #   echo "[$(date +"%Y-%m-%d %H:%M:%S")]-> PG Running pods Result: $POSTGRES - Attempt: $CNT" | tee -a  "${LOGFILE}" >> "${CONSOLELOG}" 
-  #   if [ $CNT -eq 5 ]; then
-  #     echo "[$(date +"%Y-%m-%d %H:%M:%S")]-> Rebooting after 5 minutes with Postgres only $POSTGRES" | tee -a  "${LOGFILE}" >> "${CONSOLELOG}"
-  #     #sshpass -f /home/holuser/creds.txt ssh vmware-system-user@10.1.1.71 "sudo -i bash -c reboot"
-  #     # Instead of a full reboot try deleting the vcfapostgres-0 pods, this forces the ReplicaSet to re-create them:
-  #     sshpass -f /home/holuser/creds.txt ssh vmware-system-user@10.1.1.71 "sudo -i bash -c 'kubectl -n prelude delete pods vcfapostgres-0'"
-  #     sleep 30
-  #     break
-  #   fi
-  # done
-
-  # CNT=0
-  # while [[ "$CCSK3SAPP" != "2/2" ]]; do 
-  #   sleep 300;
-	#   CCSK3SAPP=$(sshpass -f /home/holuser/creds.txt ssh vmware-system-user@10.1.1.71 "sudo -i bash -c 'kubectl get pods -n prelude -s ${K8S_API}'" | grep ccs-k3s-app | awk '{ print $2 }')
-	#   ((CNT++))
-  #   echo "[$(date +"%Y-%m-%d %H:%M:%S")]-> CCS Running pods Result: $CCSK3SAPP - Attempt: $CNT" | tee -a  "${LOGFILE}" >> "${CONSOLELOG}" 
-  #   if [ $CNT -eq 12 ]; then
-  #     echo "[$(date +"%Y-%m-%d %H:%M:%S")]-> Rebooting after 60 minutes with CCS-K3SAPP only $POSTGRES" | tee -a  "${LOGFILE}" >> "${CONSOLELOG}"
-  #     sshpass -f /home/holuser/creds.txt ssh vmware-system-user@10.1.1.71 "sudo -i bash -c reboot"
-  #     sleep 30
-  #     break
-  #   fi
-  # done
-  
-  # if [ "$CCSK3SAPP" == "2/2" ]; then
-  #   CCSK3SAPPNAME=$(sshpass -f /home/holuser/creds.txt ssh vmware-system-user@10.1.1.71 "sudo -i bash -c 'kubectl get pods -n prelude -s ${K8S_API}'" | grep ccs-k3s-app | awk '{ print $1 }')
-  #   sshpass -f /home/holuser/creds.txt ssh vmware-system-user@10.1.1.71 "sudo -i bash -c 'kubectl delete pod '\"$CCSK3SAPPNAME\"' -n prelude -s ${K8S_API}'"
-  #   echo "[$(date +"%Y-%m-%d %H:%M:%S")]-> Deleted CCS-K3S-APP for CPU usage bug" | tee -a  "${LOGFILE}" >> "${CONSOLELOG}" 
-  #   break
-  # fi
-  # if [ "$POSTGRES" == "2/2" ]; then
-  #   echo "[$(date +"%Y-%m-%d %H:%M:%S")]-> Postgres is up, waiting for CCS-K3S-APP" | tee -a  "${LOGFILE}" >> "${CONSOLELOG}" 
-  #   break
-  # fi
-#   ((REBOOTS++))
-# done
