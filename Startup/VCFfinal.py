@@ -1,6 +1,7 @@
 # VCFfinal.py version 1.4 28-April 2026
 import datetime
 import os
+import subprocess
 import sys
 import time
 import requests
@@ -349,6 +350,40 @@ if 'vraurls' in lsf.config['VCFFINAL'].keys():
     # Check VCF Automation ssh for password expiration and fix if expired
     lsf.write_output('Fixing expired automation pw if necessary...')
     lsf.run_command("/home/holuser/hol/Tools/vcfapwcheck.sh")
+    # Renew VCFA Kubernetes certificates to 5-year validity if any are expired
+    lsf.write_output('Copying k8s-renew-certs-5y.sh to VCFA (10.1.1.71)...')
+    scp_cmd = [
+        'sshpass', '-f', '/home/holuser/creds.txt',
+        'scp',
+        '-o', 'StrictHostKeyChecking=no',
+        '-o', 'UserKnownHostsFile=/dev/null',
+        '-o', 'ConnectTimeout=30',
+        '/home/holuser/hol/Tools/k8s-renew-certs-5y.sh',
+        'vmware-system-user@10.1.1.71:/tmp/'
+    ]
+    scp_result = subprocess.run(scp_cmd, capture_output=True, text=True)
+    if scp_result.returncode == 0:
+        lsf.write_output('k8s-renew-certs-5y.sh copied to /tmp on 10.1.1.71.')
+    else:
+        lsf.write_output(f'SCP to 10.1.1.71 failed (rc={scp_result.returncode}): {scp_result.stderr.strip()}')
+    lsf.write_output('Running k8s-renew-certs-5y.sh on VCFA (10.1.1.71)...')
+    ssh_cert_cmd = [
+        'sshpass', '-f', '/home/holuser/creds.txt',
+        'ssh',
+        '-o', 'StrictHostKeyChecking=no',
+        '-o', 'UserKnownHostsFile=/dev/null',
+        '-o', 'ConnectTimeout=30',
+        '-o', 'PreferredAuthentications=password',
+        '-o', 'PubkeyAuthentication=no',
+        'vmware-system-user@10.1.1.71',
+        'sudo', 'bash', '/tmp/k8s-renew-certs-5y.sh'
+    ]
+    renew_result = subprocess.run(ssh_cert_cmd, capture_output=True, text=True)
+    if renew_result.stdout:
+        lsf.write_output(renew_result.stdout)
+    if renew_result.stderr:
+        lsf.write_output(renew_result.stderr)
+    lsf.write_output(f'k8s-renew-certs-5y.sh completed (rc={renew_result.returncode}).')
     # Run the watchvcfa script to make sure the seaweedfs-master-0 pod is not stale
     lsf.run_command("/home/holuser/hol/Tools/watchvcfa.sh")
 
