@@ -36,11 +36,10 @@ VCENTER_HOST="${1:-vc-wld01-a.site-a.vcf.lab}"
 VCENTER_USER="root"
 DECRYPT_CMD="/usr/lib/vmware-wcp/decryptK8Pwd.py"
 CREDS_FILE="/home/holuser/creds.txt"
-LOG_FILE="/lmchol/hol/labstartup.log"
 CERT_DAYS=1825        # 5-year renewal validity
 THRESHOLD_DAYS=730    # Renew if any cert expires within this many days (2 years)
 
-log() { echo "$(date '+%m/%d/%Y %H:%M:%S') $*" | tee -a "${LOG_FILE}"; }
+log() { echo "$(date '+%m/%d/%Y %H:%M:%S') $*"; }
 
 # SSH with key-based auth, falling back to sshpass
 ssh_exec() {
