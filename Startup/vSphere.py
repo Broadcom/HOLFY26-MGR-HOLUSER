@@ -1,4 +1,4 @@
-# vSphere.py version 1.12 18-November 2024
+# vSphere.py version 1.13 2026-06-29
 import datetime
 import os
 import sys
@@ -81,9 +81,12 @@ if vcenters:
     for vm in vms:
         if "vCLS" in vm.name:
             vcls_vms = vcls_vms + 1
-            while not vm.runtime.powerState == "poweredOn":
-                lsf.write_output(f'Waiting for {vm.name} to power on...')
-                lsf.labstartup_sleep(lsf.sleep_seconds)
+            try:
+                while not vm.runtime.powerState == "poweredOn":
+                    lsf.write_output(f'Waiting for {vm.name} to power on...')
+                    lsf.labstartup_sleep(lsf.sleep_seconds)
+            except Exception as e:
+                lsf.write_output(f'{vm.name} no longer exists (deleted by EAM/K8s), skipping: {e}')
     if vcls_vms > 0:
         lsf.write_output('All vCLS VMs have started...')
 

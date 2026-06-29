@@ -1,4 +1,4 @@
-# VCFfinal.py version 1.4 28-April 2026
+# VCFfinal.py version 1.5 2026-06-29
 import datetime
 import os
 import subprocess
@@ -347,6 +347,28 @@ if 'vraurls' in lsf.config['VCFFINAL'].keys():
     vraurls = lsf.config.get('VCFFINAL', 'vraurls').split('\n')
     lsf.write_vpodprogress('Aria Automation URL Checks', 'GOOD-8', color=color)
     lsf.write_output('Aria Automation URL Checks...')
+    # Clean up stale system-shutdown Argo Workflows before checking VCFA health.
+    # Each shutdown cycle creates a system-shutdown-{id} Argo Workflow in vmsp-platform
+    # that persists across reboots.  When the node uncordons, Argo resumes these workflows
+    # which re-cordon the node and scale all prelude deployments to 0, causing VCFA HTTP 500.
+    lsf.write_output('Cleaning up stale VCFA Argo shutdown workflows...')
+    argo_cleanup_cmd = [
+        'sshpass', '-f', '/home/holuser/creds.txt',
+        'ssh',
+        '-o', 'StrictHostKeyChecking=no',
+        '-o', 'UserKnownHostsFile=/dev/null',
+        '-o', 'ConnectTimeout=30',
+        '-o', 'PreferredAuthentications=password',
+        '-o', 'PubkeyAuthentication=no',
+        'vmware-system-user@10.1.1.71',
+        'sudo', 'bash', '-c',
+        "kubectl get workflow -n vmsp-platform --no-headers 2>/dev/null | grep system-shutdown | awk '{print $1}' | xargs -r kubectl delete workflow -n vmsp-platform --grace-period=0 2>/dev/null; echo 'Argo cleanup done'"
+    ]
+    argo_result = subprocess.run(argo_cleanup_cmd, capture_output=True, text=True)
+    if argo_result.stdout:
+        lsf.write_output(argo_result.stdout.strip())
+    if argo_result.returncode != 0:
+        lsf.write_output(f'Argo cleanup non-fatal warning: {argo_result.stderr.strip()}')
     # Check VCF Automation ssh for password expiration and fix if expired
     lsf.write_output('Fixing expired automation pw if necessary...')
     lsf.run_command("/home/holuser/hol/Tools/vcfapwcheck.sh")
