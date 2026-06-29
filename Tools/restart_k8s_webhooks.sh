@@ -159,21 +159,21 @@ echo "==========================================" >> "${LOG_FILE}"
 echo "Scaling cci replicas back up to 1..." >> "${LOG_FILE}"
 echo "==========================================" >> "${LOG_FILE}"
 run_on_supervisor "Scale up cci" \
-    "kubectl -n svc-cci-ns-domain-c10 scale deployment --all --replicas=1"
+    "kubectl get ns svc-cci-ns-domain-c10 >/dev/null 2>&1 && kubectl -n svc-cci-ns-domain-c10 scale deployment --all --replicas=1 || echo 'svc-cci-ns-domain-c10 not found, skipping'"
 
 echo "==========================================" >> "${LOG_FILE}"
 echo "Scaling argocd replicas back up to 1..." >> "${LOG_FILE}"
 echo "==========================================" >> "${LOG_FILE}"
 run_on_supervisor "Scale up argocd" \
-    "kubectl -n argocd scale deployment --all --replicas=1"
+    "kubectl -n ns-argo-cd scale deployment --all --replicas=1"
 
 echo "==========================================" >> "${LOG_FILE}"
 echo "Scaling Harbor replicas back up to 1..." >> "${LOG_FILE}"
 echo "==========================================" >> "${LOG_FILE}"
 run_on_supervisor "Scale up Harbor StatefulSets" \
-    "kubectl -n svc-harbor-domain-c10 scale sts --all --replicas=1"
+    "kubectl get ns svc-harbor-domain-c10 >/dev/null 2>&1 && kubectl -n svc-harbor-domain-c10 scale sts --all --replicas=1 || echo 'svc-harbor-domain-c10 not found, skipping'"
 run_on_supervisor "Scale up Harbor Deployments" \
-    "kubectl -n svc-harbor-domain-c10 scale deployment --all --replicas=1"
+    "kubectl get ns svc-harbor-domain-c10 >/dev/null 2>&1 && kubectl -n svc-harbor-domain-c10 scale deployment --all --replicas=1 || echo 'svc-harbor-domain-c10 not found, skipping'"
 
 echo "" >> "${LOG_FILE}"
 echo "==========================================" >> "${LOG_FILE}"
