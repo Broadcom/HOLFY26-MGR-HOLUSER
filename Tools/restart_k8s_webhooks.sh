@@ -177,6 +177,13 @@ run_on_supervisor "Scale up Harbor Deployments" \
 
 echo "" >> "${LOG_FILE}"
 echo "==========================================" >> "${LOG_FILE}"
+echo "Cleaning up Failed pods cluster-wide..." >> "${LOG_FILE}"
+echo "==========================================" >> "${LOG_FILE}"
+run_on_supervisor "Clean up Failed pods" \
+    "kubectl delete pods --all-namespaces --field-selector=status.phase=Failed"
+
+echo "" >> "${LOG_FILE}"
+echo "==========================================" >> "${LOG_FILE}"
 echo "✓ Successfully completed certificate resets and webhook restarts" >> "${LOG_FILE}"
 echo "==========================================" >> "${LOG_FILE}"
 
