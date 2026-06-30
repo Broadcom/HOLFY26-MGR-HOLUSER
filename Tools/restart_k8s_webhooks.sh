@@ -1,7 +1,7 @@
 #!/bin/bash
 # Author: Burke Azbill
-# Version: 1.2
-# Date: 2026-06-29
+# Version: 1.3
+# Date: 2026-06-30
 # Script to delete old certificates and restart Kubernetes webhooks after extracting credentials from vCenter
 # This script:
 # 1. SSH to vCenter and run decryptK8Pwd.py
@@ -121,13 +121,46 @@ echo "Successfully extracted credentials from vCenter" >> "${LOG_FILE}"
 echo "Node IP: ${nodeIP}" >> "${LOG_FILE}"
 echo "Password retrieved: $(echo "${nodePwd}" | sed 's/./*/g')" >> "${LOG_FILE}"
 
+# Gate: confirm the Supervisor node is reachable via SSH before attempting any
+# kubectl operations. The supervisor NIC may not be connected yet at the time
+# this script runs. A single wait-loop here prevents each of the many
+# run_on_supervisor calls below from burning their own 6-attempt retry budget
+# on a "No route to host" failure (which would waste up to 27 minutes total).
+echo "==========================================" >> "${LOG_FILE}"
+echo "Waiting for Supervisor SSH at ${nodeIP}..." >> "${LOG_FILE}"
+echo "==========================================" >> "${LOG_FILE}"
+sup_ssh_ready=false
+sup_check=0
+while [[ $sup_check -lt $MAX_SUP_ATTEMPTS ]]; do
+    sup_check=$((sup_check + 1))
+    echo "  SSH connectivity check (attempt ${sup_check}/${MAX_SUP_ATTEMPTS})..." >> "${LOG_FILE}"
+    if /usr/bin/sshpass -p "${nodePwd}" ssh \
+        -o StrictHostKeyChecking=accept-new \
+        -o UserKnownHostsFile=/dev/null \
+        -o ConnectTimeout=15 \
+        "root@${nodeIP}" "echo ok" >/dev/null 2>&1; then
+        echo "  Supervisor SSH reachable." >> "${LOG_FILE}"
+        sup_ssh_ready=true
+        break
+    fi
+    if [[ $sup_check -lt $MAX_SUP_ATTEMPTS ]]; then
+        echo "  No route to Supervisor yet, retrying in ${SUP_RETRY_DELAY}s..." >> "${LOG_FILE}"
+        sleep "${SUP_RETRY_DELAY}"
+    fi
+done
+
+if [[ "${sup_ssh_ready}" != "true" ]]; then
+    echo "WARNING: Supervisor at ${nodeIP} unreachable after ${MAX_SUP_ATTEMPTS} attempts — skipping all supervisor operations" >> "${LOG_FILE}"
+    exit 0
+fi
+
 # Delete expired cert secrets and restart webhook deployments.
 # --ignore-not-found prevents failure when secrets have already been cleaned up.
 echo "==========================================" >> "${LOG_FILE}"
 echo "Deleting storage-quota-root-ca-secret..." >> "${LOG_FILE}"
 echo "==========================================" >> "${LOG_FILE}"
 run_on_supervisor "Delete storage-quota-root-ca-secret" \
-    "kubectl -n vmware-system-cert-manager delete secret storage-quota-root-ca-secret --ignore-not-found"
+    "kubectl get ns vmware-system-cert-manager >/dev/null 2>&1 && kubectl -n vmware-system-cert-manager delete secret storage-quota-root-ca-secret --ignore-not-found || echo 'vmware-system-cert-manager not found, skipping'"
 
 echo "==========================================" >> "${LOG_FILE}"
 echo "Deleting storage-quota-webhook-server-internal-cert..." >> "${LOG_FILE}"
@@ -145,13 +178,13 @@ echo "==========================================" >> "${LOG_FILE}"
 echo "Restarting cns-storage-quota-extension..." >> "${LOG_FILE}"
 echo "==========================================" >> "${LOG_FILE}"
 run_on_supervisor "Restart cns-storage-quota-extension" \
-    "kubectl -n kube-system rollout restart deploy cns-storage-quota-extension"
+    "kubectl -n kube-system get deploy cns-storage-quota-extension >/dev/null 2>&1 && kubectl -n kube-system rollout restart deploy cns-storage-quota-extension || echo 'cns-storage-quota-extension not found, skipping'"
 
 echo "==========================================" >> "${LOG_FILE}"
 echo "Restarting storage-quota-webhook..." >> "${LOG_FILE}"
 echo "==========================================" >> "${LOG_FILE}"
 run_on_supervisor "Restart storage-quota-webhook" \
-    "kubectl -n kube-system rollout restart deploy storage-quota-webhook"
+    "kubectl -n kube-system get deploy storage-quota-webhook >/dev/null 2>&1 && kubectl -n kube-system rollout restart deploy storage-quota-webhook || echo 'storage-quota-webhook not found, skipping'"
 
 sleep 20
 
@@ -165,7 +198,7 @@ echo "==========================================" >> "${LOG_FILE}"
 echo "Scaling argocd replicas back up to 1..." >> "${LOG_FILE}"
 echo "==========================================" >> "${LOG_FILE}"
 run_on_supervisor "Scale up argocd" \
-    "kubectl -n ns-argo-cd scale deployment --all --replicas=1"
+    "kubectl get ns ns-argo-cd >/dev/null 2>&1 && kubectl -n ns-argo-cd scale deployment --all --replicas=1 || echo 'ns-argo-cd not found, skipping'"
 
 echo "==========================================" >> "${LOG_FILE}"
 echo "Scaling Harbor replicas back up to 1..." >> "${LOG_FILE}"
