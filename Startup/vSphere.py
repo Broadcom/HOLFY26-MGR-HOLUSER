@@ -75,18 +75,34 @@ if vcenters:
 
 ###
 # verify the vcls VMs have started
+# All vCLS VMs are checked together each cycle so they are effectively waited
+# on in parallel. The VM name is captured upfront so it remains accessible if
+# the MO reference becomes invalid during deletion. connectionState is checked
+# on every iteration so VMs transitioning to orphaned/inaccessible/invalid
+# (the pre-deletion states EAM uses) are skipped immediately rather than
+# sleeping until the MO reference finally raises an exception.
 vcls_vms = 0
 if vcenters:
     vms = lsf.get_all_vms()
-    for vm in vms:
-        if "vCLS" in vm.name:
-            vcls_vms = vcls_vms + 1
+    pending = [(vm.name, vm) for vm in vms if "vCLS" in vm.name]
+    vcls_vms = len(pending)
+    while pending:
+        still_pending = []
+        for vm_name, vm in pending:
             try:
-                while not vm.runtime.powerState == "poweredOn":
-                    lsf.write_output(f'Waiting for {vm.name} to power on...')
-                    lsf.labstartup_sleep(lsf.sleep_seconds)
+                runtime = vm.runtime  # single property fetch for both fields
+                if runtime.powerState == 'poweredOn':
+                    continue  # done — drop from pending
+                if runtime.connectionState in ('orphaned', 'inaccessible', 'invalid'):
+                    lsf.write_output(f'{vm_name} is {runtime.connectionState} (being removed by EAM/K8s), skipping')
+                    continue
+                lsf.write_output(f'Waiting for {vm_name} to power on ({runtime.powerState})...')
+                still_pending.append((vm_name, vm))
             except Exception as e:
-                lsf.write_output(f'{vm.name} no longer exists (deleted by EAM/K8s), skipping: {e}')
+                lsf.write_output(f'{vm_name} no longer exists (deleted by EAM/K8s), skipping: {e}')
+        pending = still_pending
+        if pending:
+            lsf.labstartup_sleep(lsf.sleep_seconds)
     if vcls_vms > 0:
         lsf.write_output('All vCLS VMs have started...')
 
