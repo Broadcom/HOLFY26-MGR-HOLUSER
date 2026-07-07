@@ -1,21 +1,24 @@
 #!/bin/bash
 # =============================================================================
-# k8s-renew-certs-5y.sh  v3
+# k8s-renew-certs-5y.sh  v4
+# Date: 2026-07-07
 # Renew ALL Kubernetes certificates with 5-year validity
 #
 # Features:
 #   - Pre-check: only proceeds when any cert expires within THRESHOLD_DAYS (2y)
 #   - Version-adaptive: uses kubeadm ClusterConfiguration certificateValidityPeriod
 #     on kubeadm >= 1.29; falls back to two-pass OpenSSL re-sign on older releases
-#   - Covers PKI certs, kubeconfig embedded certs, kubelet rotating + serving certs
+#   - Covers PKI certs, kubeconfig embedded certs (including kubelet.conf and
+#     super-admin.conf which kubeadm does not renew), kubelet rotating + serving certs
+#   - Handles Supervisor-specific standalone scheduler.crt if present
 #   - Explicitly restarts control plane pods (kube-apiserver, kube-controller-manager,
 #     kube-scheduler, etcd) via crictl, then restarts kubelet for kubelet cert pickup
 #   - Comprehensive expiry validation at the end
 #
 # Requirements:
-#   - Run as root on the kubeadm control-plane node
+#   - Run as root on the kubeadm control-plane node (or vSphere Supervisor CP node)
 #   - OpenSSL 1.1.1+ (3.x preferred)
-#   - kubeadm, systemctl, crictl
+#   - kubeadm (optional but preferred), systemctl, crictl
 #   - Cluster CA certs must still be valid (/etc/kubernetes/pki/ca.crt etc.)
 #
 # Usage:
@@ -23,8 +26,9 @@
 #   bash k8s-renew-certs-5y.sh --dry-run  # Show current expiry only, no changes
 #   bash k8s-renew-certs-5y.sh --force    # Skip pre-check, always renew
 #
-# Tested on: Kubernetes v1.27, Photon OS 5, OpenSSL 3.0.8
+# Tested on: Kubernetes v1.27, v1.30, Photon OS 5, OpenSSL 3.0.8
 #            (config path auto-activates on kubeadm >= 1.29)
+#            vSphere Supervisor Control Plane nodes (VCF 9.0/9.1)
 # =============================================================================
 set -euo pipefail
 
@@ -49,9 +53,9 @@ step()  { echo; echo -e "${CYAN}━━━ $* ━━━${NC}"; }
 
 # ─── Preflight ────────────────────────────────────────────────────────────────
 [[ $EUID -ne 0 ]]                           && error "Must run as root"
-command -v kubeadm >/dev/null 2>&1          || error "kubeadm not found in PATH"
 command -v openssl >/dev/null 2>&1          || error "openssl not found in PATH"
 command -v systemctl >/dev/null 2>&1        || error "systemctl not found in PATH"
+command -v kubeadm >/dev/null 2>&1          || warn  "kubeadm not found — using OpenSSL-only path for all PKI certs"
 command -v crictl >/dev/null 2>&1           || warn  "crictl not found — control plane pods will be restarted via kubelet"
 [[ -f "$PKI/ca.crt" && -f "$PKI/ca.key" ]] || error "Cluster CA not found at $PKI/ca.crt / $PKI/ca.key"
 
@@ -269,11 +273,14 @@ resign_kubeconfig() {
     rm -f "$CERT" "$KEY" "$TMPDIR/kc.csr" "$NEW_CERT" "$EXT_FILE"
 }
 
-# ─── Determine renewal strategy ───────────────────────────────────────────────
-KUBEADM_MINOR=$(kubeadm version -o short 2>/dev/null | grep -oE 'v1\.[0-9]+' | head -1 | cut -d. -f2)
 HOURS=$((DAYS * 24))
 
 step "Step 2: Renewing control-plane + kubeconfig certs (${DAYS}-day / 5-year target)"
+
+KUBEADM_MINOR=0
+if command -v kubeadm >/dev/null 2>&1; then
+    KUBEADM_MINOR=$(kubeadm version -o short 2>/dev/null | grep -oE 'v1\.[0-9]+' | head -1 | cut -d. -f2 || echo 0)
+fi
 
 if [[ "${KUBEADM_MINOR:-0}" -ge 29 ]]; then
     # ── Config-driven path (kubeadm >= 1.29) ─────────────────────────────────
@@ -287,7 +294,7 @@ certificateValidityPeriod: ${HOURS}h0m0s
 EOF
 
     kubeadm certs renew all --config "$TMPDIR/kubeadm-config.yaml" 2>&1 || \
-        warn "kubeadm reported an error — check output above"
+        warn "kubeadm reported an error — will fall through to OpenSSL re-sign below"
 
     info ""
     info "Verifying resulting expiry dates:"
@@ -296,7 +303,7 @@ EOF
         info "  $(basename "$CERT")  →  expires $EXP"
     done
 
-else
+elif [[ "${KUBEADM_MINOR:-0}" -gt 0 ]]; then
     # ── Two-pass OpenSSL path (kubeadm < 1.29) ────────────────────────────────
     info "kubeadm v1.${KUBEADM_MINOR} — certificateValidityPeriod not supported"
     info "Using two-pass approach: kubeadm renew (1y structure) + OpenSSL re-sign (5y)"
@@ -305,26 +312,44 @@ else
     info "Pass 1: kubeadm certs renew all  (establishes correct cert structure + SANs)"
     kubeadm certs renew all 2>&1 || \
         warn "kubeadm reported an error — continuing with OpenSSL re-sign using local CA"
-
-    echo
-    info "Pass 2: Re-signing PKI certs to ${DAYS}-day validity"
-    info "[ cluster CA-signed ]"
-    resign_pki_cert "$PKI/apiserver.crt"                "$PKI/apiserver.key"               "$PKI/ca.crt"           "$PKI/ca.key"
-    resign_pki_cert "$PKI/apiserver-kubelet-client.crt" "$PKI/apiserver-kubelet-client.key" "$PKI/ca.crt"           "$PKI/ca.key"
-    resign_pki_cert "$PKI/front-proxy-client.crt"       "$PKI/front-proxy-client.key"       "$PKI/front-proxy-ca.crt" "$PKI/front-proxy-ca.key"
-
-    info "[ etcd CA-signed ]"
-    resign_pki_cert "$PKI/apiserver-etcd-client.crt"   "$PKI/apiserver-etcd-client.key"   "$PKI/etcd/ca.crt" "$PKI/etcd/ca.key"
-    resign_pki_cert "$PKI/etcd/server.crt"             "$PKI/etcd/server.key"             "$PKI/etcd/ca.crt" "$PKI/etcd/ca.key"
-    resign_pki_cert "$PKI/etcd/peer.crt"               "$PKI/etcd/peer.key"               "$PKI/etcd/ca.crt" "$PKI/etcd/ca.key"
-    resign_pki_cert "$PKI/etcd/healthcheck-client.crt" "$PKI/etcd/healthcheck-client.key" "$PKI/etcd/ca.crt" "$PKI/etcd/ca.key"
-
-    echo
-    info "[ kubeconfig embedded client certs ]"
-    resign_kubeconfig "$K8S/admin.conf"              "$PKI/ca.crt" "$PKI/ca.key"
-    resign_kubeconfig "$K8S/controller-manager.conf" "$PKI/ca.crt" "$PKI/ca.key"
-    resign_kubeconfig "$K8S/scheduler.conf"          "$PKI/ca.crt" "$PKI/ca.key"
+else
+    info "kubeadm not found — using OpenSSL-only re-sign path"
 fi
+
+# ── OpenSSL re-sign pass (always runs — extends validity to 5y and covers
+#    certs that kubeadm misses, e.g. Supervisor-specific scheduler.crt) ───────
+echo
+info "OpenSSL re-sign pass — re-signing all PKI certs to ${DAYS}-day (5y) validity"
+info "[ cluster CA-signed ]"
+resign_pki_cert "$PKI/apiserver.crt"                "$PKI/apiserver.key"               "$PKI/ca.crt"           "$PKI/ca.key"
+resign_pki_cert "$PKI/apiserver-kubelet-client.crt" "$PKI/apiserver-kubelet-client.key" "$PKI/ca.crt"           "$PKI/ca.key"
+resign_pki_cert "$PKI/front-proxy-client.crt"       "$PKI/front-proxy-client.key"       "$PKI/front-proxy-ca.crt" "$PKI/front-proxy-ca.key"
+# Supervisor CP nodes carry a standalone scheduler.crt (not embedded in scheduler.conf)
+if [[ -f "$PKI/scheduler.crt" && -f "$PKI/scheduler.key" ]]; then
+    resign_pki_cert "$PKI/scheduler.crt" "$PKI/scheduler.key" "$PKI/ca.crt" "$PKI/ca.key"
+fi
+
+info "[ etcd CA-signed ]"
+resign_pki_cert "$PKI/apiserver-etcd-client.crt"   "$PKI/apiserver-etcd-client.key"   "$PKI/etcd/ca.crt" "$PKI/etcd/ca.key"
+resign_pki_cert "$PKI/etcd/server.crt"             "$PKI/etcd/server.key"             "$PKI/etcd/ca.crt" "$PKI/etcd/ca.key"
+resign_pki_cert "$PKI/etcd/peer.crt"               "$PKI/etcd/peer.key"               "$PKI/etcd/ca.crt" "$PKI/etcd/ca.key"
+resign_pki_cert "$PKI/etcd/healthcheck-client.crt" "$PKI/etcd/healthcheck-client.key" "$PKI/etcd/ca.crt" "$PKI/etcd/ca.key"
+
+echo
+info "[ kubeconfig embedded client certs ]"
+# Standard kubeadm kubeconfigs
+resign_kubeconfig "$K8S/admin.conf"              "$PKI/ca.crt" "$PKI/ca.key"
+resign_kubeconfig "$K8S/controller-manager.conf" "$PKI/ca.crt" "$PKI/ca.key"
+resign_kubeconfig "$K8S/scheduler.conf"          "$PKI/ca.crt" "$PKI/ca.key"
+# vSphere Supervisor CP adds super-admin.conf (kubeadm >= 1.28 may handle this,
+# but we re-sign via OpenSSL as well to guarantee 5-year validity)
+[[ -f "$K8S/super-admin.conf" ]] && \
+    resign_kubeconfig "$K8S/super-admin.conf" "$PKI/ca.crt" "$PKI/ca.key"
+# kubelet.conf holds the node's own bootstrap client cert — kubeadm never renews
+# this file; when it expires kubelet cannot start, which prevents the API server
+# static pod from being scheduled and leaves the Supervisor stuck in "Configuring".
+[[ -f "$K8S/kubelet.conf" ]] && \
+    resign_kubeconfig "$K8S/kubelet.conf" "$PKI/ca.crt" "$PKI/ca.key"
 
 # =============================================================================
 # STEP 3 — Renew kubelet rotating client cert (always manual — kubeadm never
@@ -435,6 +460,14 @@ echo
 info "[ apiserver SAN check ]"
 openssl x509 -in "$PKI/apiserver.crt" -noout -text 2>/dev/null | \
     grep -A2 "Subject Alternative Name" || warn "No SANs found in apiserver.crt — verify manually"
+
+echo
+info "[ kubelet.conf cert ]"
+if [[ -f "$K8S/kubelet.conf" ]]; then
+    awk '/client-certificate-data:/{print $2}' "$K8S/kubelet.conf" | base64 -d | \
+        openssl x509 -noout -enddate -subject 2>/dev/null || \
+        warn "Could not decode kubelet.conf client cert"
+fi
 
 echo
 info "All done. Backup saved at: $BACKUP_DIR"
