@@ -1,5 +1,5 @@
 #! /bin/bash
-# version 1.13 09-May 2025
+# version 1.14 2026-07-07
 
 git_pull() {
    cd "$1" || exit
@@ -61,6 +61,20 @@ git_clone() {
       ctr=$(("$ctr" + 1))
       sleep 5
    done
+}
+
+sync_console_hol() {
+   # Copy Tools/console/hol contents → lmcholroot, overwriting matching files
+   # without deleting any existing files that are not in the source.
+   # __pycache__ directories are excluded (auto-generated, not source files).
+   local src="${holroot}/Tools/console/hol"
+   if [ -d "${src}" ] && [ -d "${lmcholroot}" ]; then
+      echo "Syncing ${src} to ${lmcholroot}..." >> ${logfile}
+      rsync -a --exclude='__pycache__' "${src}/" "${lmcholroot}/" >> ${logfile} 2>&1
+      echo "Sync complete." >> ${logfile}
+   else
+      echo "WARN: sync_console_hol skipped (src=${src} exists=$([ -d ${src} ] && echo yes || echo no), lmcholroot=${lmcholroot} exists=$([ -d ${lmcholroot} ] && echo yes || echo no))" >> ${logfile}
+   fi
 }
 
 runlabstartup() {
@@ -236,6 +250,7 @@ if [ "$vPod_SKU" = "HOL-BADSKU" ];then
    if [ "${labtype}" = "HOL" ];then
       /usr/bin/sshpass -p "${password}" scp -o ${sshoptions} -r ${holroot}/"${router}" holuser@router:/tmp
    fi
+   sync_console_hol
    runlabstartup
    exit 0
 fi
@@ -325,6 +340,7 @@ echo "" > /tmp/gitdone
 
 if [ -f ${configini} ];then
    rm -rf /home/holuser/hol/__pycache__
+   sync_console_hol
    runlabstartup
    echo "$0 finished." >> ${logfile}
 else
