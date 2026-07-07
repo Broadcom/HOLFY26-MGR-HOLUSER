@@ -1,4 +1,4 @@
-# VCFfinal.py version 1.5 2026-06-29
+# VCFfinal.py version 1.6 2026-07-07
 import datetime
 import os
 import subprocess
@@ -144,7 +144,29 @@ for vm in supvms:
 # if supvms list is not empty, then restart the webhooks
 if supvms:
     lsf.write_output(f'Restarting Supervisor Webhooks')
+    # Record the current size of the LMC logfile so we can forward any new
+    # entries written by the script (which writes only to that one path) into
+    # all lsf logfiles, giving the local log full visibility of the run.
+    _wh_log = "/lmchol/hol/labstartup.log"
+    try:
+        _wh_start = os.path.getsize(_wh_log)
+    except OSError:
+        _wh_start = 0
     lsf.run_command("/home/holuser/hol/Tools/restart_k8s_webhooks.sh")
+    # Read the script's new log entries into memory FIRST, then close the file
+    # before calling lsf.write_output() — otherwise write_output() appends to
+    # the same file we are iterating over, creating an infinite feedback loop.
+    try:
+        with open(_wh_log, 'r', errors='replace') as _wh_f:
+            _wh_f.seek(_wh_start)
+            _wh_lines = _wh_f.readlines()
+    except OSError:
+        _wh_lines = []
+    for _wh_line in _wh_lines:
+        _stripped = _wh_line.rstrip()
+        if _stripped:
+            lsf.write_output(f'  [webhooks] {_stripped}')
+    lsf.write_output(f'Supervisor Webhooks restart complete')
 
 # ----------------------------------------------------------------------
 # VVF901-MicroPod: verify Supervisor control plane on all vCenters (REST)
@@ -171,7 +193,22 @@ if lsf.lab_sku == 'VVF901-MicroPod':
     lsf.write_vpodprogress('Supervisor Control Plane', 'GOOD-3', color=color)
     
     lsf.write_output(f'Restarting Supervisor Webhooks')
+    _wh_log2 = "/lmchol/hol/labstartup.log"
+    try:
+        _wh_start2 = os.path.getsize(_wh_log2)
+    except OSError:
+        _wh_start2 = 0
     lsf.run_command("/home/holuser/hol/Tools/restart_k8s_webhooks.sh vc-mgmt-a.site-a.vcf.lab")
+    try:
+        with open(_wh_log2, 'r', errors='replace') as _wh_f2:
+            _wh_f2.seek(_wh_start2)
+            _wh_lines2 = _wh_f2.readlines()
+    except OSError:
+        _wh_lines2 = []
+    for _wh_line2 in _wh_lines2:
+        _stripped2 = _wh_line2.rstrip()
+        if _stripped2:
+            lsf.write_output(f'  [webhooks] {_stripped2}')
     lsf.write_output(f'Supervisor Webhooks Restarted')
 
     vcenter_targets = []

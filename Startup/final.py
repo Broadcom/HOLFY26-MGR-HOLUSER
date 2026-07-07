@@ -1,4 +1,4 @@
-# final.py - version v1.6 - 05-February 2024
+# final.py - version v1.7 - 07-July-2026
 import sys
 import lsfunctions as lsf
 import os
@@ -32,7 +32,7 @@ if lsf.labcheck == False:
 if lsf.LMC and lsf.labtype == 'HOL':
     try:
         lsf.write_output('Making sure updates are not showing on console...')
-        lsf.ssh(f'pkill update-manager;pkill update-notifier 2>&1', 'holuser@console', lsf.password)
+        lsf.ssh(f'pkill update-manager 2>/dev/null || true; pkill update-notifier 2>/dev/null || true', 'holuser@console', lsf.password)
     except Exception as e:
         lsf.write_output(f'exception: {e}')
 
