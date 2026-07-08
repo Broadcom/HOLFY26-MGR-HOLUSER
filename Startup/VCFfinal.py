@@ -1,4 +1,4 @@
-# VCFfinal.py version 1.6 2026-07-07
+# VCFfinal.py version 1.8 2026-07-08
 import datetime
 import os
 import subprocess
@@ -167,6 +167,23 @@ if supvms:
         if _stripped:
             lsf.write_output(f'  [webhooks] {_stripped}')
     lsf.write_output(f'Supervisor Webhooks restart complete')
+    # Renew ESXi spherelet (kubelet client/serving) certificates so that
+    # Supervisor agent (worker) nodes re-register as Ready after a cold boot.
+    # The CP cert renewal above brings up the VIP; this step ensures the
+    # ESXi worker nodes can authenticate to the newly-started API server.
+    lsf.write_output('Renewing Supervisor ESXi spherelet certificates...')
+    _sph_result = subprocess.run(
+        ['/home/holuser/hol/Tools/renew_spherelet_certs.sh'],
+        capture_output=True, text=True
+    )
+    for _sph_line in _sph_result.stdout.splitlines():
+        if _sph_line.strip():
+            lsf.write_output(f'  [spherelet] {_sph_line.strip()}')
+    if _sph_result.returncode != 0 and _sph_result.stderr:
+        for _sph_line in _sph_result.stderr.splitlines():
+            if _sph_line.strip():
+                lsf.write_output(f'  [spherelet] STDERR: {_sph_line.strip()}')
+    lsf.write_output(f'Spherelet cert renewal complete (rc={_sph_result.returncode})')
 
 # ----------------------------------------------------------------------
 # VVF901-MicroPod: verify Supervisor control plane on all vCenters (REST)

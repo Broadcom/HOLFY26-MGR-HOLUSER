@@ -1,7 +1,7 @@
 #!/bin/bash
 # =============================================================================
-# k8s-renew-certs-5y.sh  v4
-# Date: 2026-07-07
+# k8s-renew-certs-5y.sh  v5
+# Date: 2026-07-08
 # Renew ALL Kubernetes certificates with 5-year validity
 #
 # Features:
@@ -89,9 +89,11 @@ check_cert() {
         return
     fi
     local EXP
-    EXP=$(openssl x509 -in "$FILE" -noout -enddate 2>/dev/null | cut -d= -f2)
+    # Use || EXP="" to prevent set -e from triggering when openssl cannot parse
+    # an empty or non-cert file (e.g. kubeconfig without embedded client-certificate-data)
+    EXP=$(openssl x509 -in "$FILE" -noout -enddate 2>/dev/null | cut -d= -f2) || EXP=""
     if ! openssl x509 -in "$FILE" -checkend "$THRESHOLD_SEC" >/dev/null 2>&1; then
-        warn "  RENEW    $LABEL  (expires $EXP)"
+        warn "  RENEW    $LABEL  (expires ${EXP:-unknown})"
         NEEDS_RENEWAL=true
     else
         info "  OK       $LABEL  (expires $EXP)"
@@ -399,7 +401,9 @@ info "  kubelet.crt  →  expires $EXP"
 # =============================================================================
 step "Step 5: Updating root kubeconfig"
 mkdir -p /root/.kube
-cp "$K8S/admin.conf" /root/.kube/config
+# Suppress the "same file" warning that occurs on Supervisor nodes where
+# admin.conf and /root/.kube/config share the same inode.
+cp -f "$K8S/admin.conf" /root/.kube/config 2>/dev/null || true
 info "  /root/.kube/config updated from admin.conf"
 
 # =============================================================================

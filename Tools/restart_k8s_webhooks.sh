@@ -1,7 +1,7 @@
 #!/bin/bash
 # Author: Burke Azbill
-# Version: 1.5
-# Date: 2026-07-07
+# Version: 1.6
+# Date: 2026-07-08
 # Script to renew expired Supervisor CP certificates and restart Kubernetes webhooks.
 # This script:
 # 1. SSH to vCenter and run decryptK8Pwd.py to get the Supervisor node IP + password
@@ -26,7 +26,7 @@ DECRYPT_CMD="/usr/lib/vmware-wcp/decryptK8Pwd.py"
 CREDS_FILE="/home/holuser/creds.txt"
 LOG_FILE="/lmchol/hol/labstartup.log"
 MAX_VC_ATTEMPTS=5
-MAX_SUP_ATTEMPTS=6
+MAX_SUP_ATTEMPTS=10
 SUP_RETRY_DELAY=30
 
 # Helper function to execute SSH with fallback to sshpass
@@ -66,6 +66,8 @@ run_on_supervisor() {
             -o StrictHostKeyChecking=accept-new \
             -o UserKnownHostsFile=/dev/null \
             -o ConnectTimeout=15 \
+            -o HostKeyAlgorithms=+ssh-rsa \
+            -o PubkeyAcceptedKeyTypes=+ssh-rsa \
             "root@${nodeIP}" "${cmd}" >> "${LOG_FILE}" 2>&1; then
             return 0
         fi
@@ -145,6 +147,8 @@ if /usr/bin/sshpass -p "${nodePwd}" ssh \
     -o StrictHostKeyChecking=accept-new \
     -o UserKnownHostsFile=/dev/null \
     -o ConnectTimeout=10 \
+    -o HostKeyAlgorithms=+ssh-rsa \
+    -o PubkeyAcceptedKeyTypes=+ssh-rsa \
     "root@${nodeIP}" "echo ok" >/dev/null 2>&1; then
     echo "  Supervisor VIP ${nodeIP} already SSH-reachable — skipping cert renewal" >> "${LOG_FILE}"
 else
@@ -193,7 +197,17 @@ ORDER BY entity_id, ip_address;\"" 2>/dev/null \
             echo "  Running k8s-renew-certs-5y.sh on ${node_ip_direct} via vCenter hop..." >> "${LOG_FILE}"
             echo "  (Pre-check: renews only if certs expire within 730 days)" >> "${LOG_FILE}"
             CERT_RC=0
-            ssh_with_fallback "${VCENTER_USER}" "${VCENTER_HOST}" \
+            # Use sshpass directly (not ssh_with_fallback) to avoid the double-run problem:
+            # ssh_with_fallback retries via sshpass when BatchMode SSH returns non-zero for
+            # ANY reason (including the cert renewal script itself exiting non-zero). The
+            # second retry then fails because the cleanup in the first run already deleted
+            # /tmp/k8s-renew-certs-5y.sh from vCenter. Using sshpass directly runs exactly
+            # once and captures the correct exit code.
+            /usr/bin/sshpass -p "${vc_pw}" ssh \
+                -o StrictHostKeyChecking=no \
+                -o UserKnownHostsFile=/dev/null \
+                -o ConnectTimeout=15 \
+                "${VCENTER_USER}@${VCENTER_HOST}" \
                 "echo ${nodePwd_b64} | base64 -d > /tmp/.scppwd_cert && chmod 600 /tmp/.scppwd_cert && \
                  sshpass -f /tmp/.scppwd_cert scp -o StrictHostKeyChecking=no \
                  -o UserKnownHostsFile=/dev/null -o ConnectTimeout=15 \
@@ -206,11 +220,11 @@ ORDER BY entity_id, ip_address;\"" 2>/dev/null \
                 >> "${LOG_FILE}" 2>&1 || CERT_RC=$?
 
             if [[ "${CERT_RC}" -eq 0 ]]; then
-                echo "  Cert renewal complete — waiting 75s for API server and VIP to start..." >> "${LOG_FILE}"
-                sleep 75
+                echo "  Cert renewal complete — waiting 75s for API server and VIP to come up..." >> "${LOG_FILE}"
             else
-                echo "  Cert check exited ${CERT_RC} — no renewal performed; Supervisor may still start" >> "${LOG_FILE}"
+                echo "  Cert renewal exited ${CERT_RC} — kubelet may have restarted mid-run; waiting 75s anyway..." >> "${LOG_FILE}"
             fi
+            sleep 75
         else
             echo "  Could not reach any CP node via vCenter hop — skipping cert renewal" >> "${LOG_FILE}"
             echo "  (VIP ${nodeIP} will be retried in the SSH wait loop below)" >> "${LOG_FILE}"
@@ -236,6 +250,8 @@ while [[ $sup_check -lt $MAX_SUP_ATTEMPTS ]]; do
         -o StrictHostKeyChecking=accept-new \
         -o UserKnownHostsFile=/dev/null \
         -o ConnectTimeout=15 \
+        -o HostKeyAlgorithms=+ssh-rsa \
+        -o PubkeyAcceptedKeyTypes=+ssh-rsa \
         "root@${nodeIP}" "echo ok" >/dev/null 2>&1; then
         echo "  Supervisor SSH reachable." >> "${LOG_FILE}"
         sup_ssh_ready=true
