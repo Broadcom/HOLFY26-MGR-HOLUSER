@@ -1,5 +1,6 @@
 import requests
 import json
+import re
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 import base64
@@ -387,24 +388,35 @@ def importCertificateToFleetManager(inFqdn,token, verify, alias, pemFile, keyFil
     caChain = file.readFile(pemFile)
     key = file.readFile(keyFile)
 
-    payload = json.dumps({
+    # Strip any private key blocks from certificateChain — VRSLCM expects only
+    # the certificate chain (leaf + CA) in this field; the private key belongs
+    # exclusively in the privateKey field.
+    certChainOnly = re.sub(
+        r'-----BEGIN (?:RSA |EC |ENCRYPTED )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |ENCRYPTED )?PRIVATE KEY-----\s*',
+        '', caChain
+    ).strip()
+
+    # Use a dict and json= (not data=json.dumps()) so requests serialises compactly;
+    # VRSLCM returns 400 LCM_CERTIFICATE_API_ERROR0001 when receiving
+    # pre-serialised multi-line JSON strings via data=.
+    payload = {
         "alias": alias,
-        "certificateChain": caChain,
+        "certificateChain": certChainOnly,
         "passcode": "",
         "privateKey": key
-    }, indent=4) 
+    }
 
     if debug:
-        print(payload)
+        print(json.dumps(payload, indent=4))
 
     try:
         print(f"TASK: Importing Certificate {alias} into Locker")
-        response = requests.post(url=url, data=payload, headers=headers, verify=verify )
+        response = requests.post(url=url, json=payload, headers=headers, verify=verify )
         jResponse = response.json()
 
         if response.status_code < 200 or response.status_code >= 300:
             print(f"INFO: Response Code: {str(response.status_code)}")
-            print(payload)
+            print(json.dumps(payload, indent=4))
             print(json.dumps(jResponse, indent=4))
             response.raise_for_status()
             return response.status_code

@@ -103,28 +103,26 @@ if certificate:
             cert.createCaChain(pemFile, cer, ca, replaceExisting, key)
 
             try:
-                if certVmid:
-                    # VRSLCM locker PATCH is not supported and DELETE is rejected for
-                    # certs associated with a deployed environment.  Instead, import
-                    # the new cert under a versioned alias and invoke the VCF Ops
-                    # internal cert management replace API to push it live.
-                    fleet.deleteCertificateByAlias(lcmFqdn, token, sslVerify, versionedAlias)
-                    fleet.importCertificateToFleetManager(lcmFqdn, token, sslVerify, versionedAlias, pemFile, keyFile)
-                    newVmid = fleet.getCertificateVmidByAlias(lcmFqdn, token, sslVerify, versionedAlias)
-                    if newVmid:
-                        opsToken = ops.getVcfOpsAuthToken(opsFqdn, opsUsername, opsPassword, sslVerify)
-                        opsSession = ops.createOpsCertSession(opsFqdn, opsToken, sslVerify)
-                        certKey = ops.getOpsCertResourceKey(opsFqdn, opsToken, sslVerify, opsFqdn, session=opsSession)
-                        if certKey:
-                            taskId = ops.replaceOpsCertificate(opsFqdn, opsToken, sslVerify, certKey, newVmid, session=opsSession)
-                            if taskId:
-                                ops.pollOpsCertTask(opsFqdn, opsToken, sslVerify, taskId, session=opsSession)
-                        else:
-                            print(f"ERROR: Could not find cert resource key for '{opsFqdn}' in VCF Ops")
+                # Always import under a versioned alias and invoke the VCF Ops
+                # internal cert management replace API to push the new cert live.
+                # This works whether or not a cert already exists under the main alias
+                # because VCF Ops tracks cert resource keys independently of the locker.
+                fleet.deleteCertificateByAlias(lcmFqdn, token, sslVerify, versionedAlias)
+                fleet.importCertificateToFleetManager(lcmFqdn, token, sslVerify, versionedAlias, pemFile, keyFile)
+                newVmid = fleet.getCertificateVmidByAlias(lcmFqdn, token, sslVerify, versionedAlias)
+                if newVmid:
+                    opsToken = ops.getVcfOpsAuthToken(opsFqdn, opsUsername, opsPassword, sslVerify)
+                    opsSession = ops.createOpsCertSession(opsFqdn, opsToken, sslVerify)
+                    # Search by node FQDN (ops-01a.*) — the cert CN in VCF Ops, not the VIP (ops-a.*)
+                    certKey = ops.getOpsCertResourceKey(opsFqdn, opsToken, sslVerify, fqdn, session=opsSession)
+                    if certKey:
+                        taskId = ops.replaceOpsCertificate(opsFqdn, opsToken, sslVerify, certKey, newVmid, session=opsSession)
+                        if taskId:
+                            ops.pollOpsCertTask(opsFqdn, opsToken, sslVerify, taskId, session=opsSession)
                     else:
-                        print(f"ERROR: Failed to retrieve vmid for versioned alias '{versionedAlias}'")
+                        print(f"ERROR: Could not find cert resource key for '{fqdn}' in VCF Ops")
                 else:
-                    fleet.importCertificateToFleetManager(lcmFqdn, token, sslVerify, alias, pemFile, keyFile)
+                    print(f"ERROR: Failed to retrieve vmid for versioned alias '{versionedAlias}'")
             except Exception as e:
                 print(f"ERROR: {e}")
         else:
