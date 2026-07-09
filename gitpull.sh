@@ -1,5 +1,5 @@
 #! /bin/bash
-# version 1.5 - 2025-11-13
+# version 1.6 - 2026-07-09
 
 # the only job of this script is to do the initial Core Team git pull
 
@@ -30,8 +30,9 @@ while true;do
    fi
    git stash
    git pull origin main >> ${logfile} 2>&1
+   pullresult=$?
    git stash apply
-   if [ $? = 0 ];then
+   if [ "$pullresult" = 0 ];then
       echo "" > /tmp/coregitdone
       break
    else
