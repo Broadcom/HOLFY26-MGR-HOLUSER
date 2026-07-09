@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # confighol-9.0.py - HOLFY27 vApp HOLification Tool
-# Version 2.7 - March 2026
+# Version 2.9 - 08-July-2026
 # Author - Burke Azbill and HOL Core Team
 #
 # Script Naming Convention:
@@ -9,6 +9,17 @@
 # require a new script version (e.g., confighol-9.5.py for VCF 9.5.x).
 #
 # CHANGELOG:
+# v2.9 - 2026-07-08:
+#   - Auto-rotate disable: the initial /v1/credentials fetch (Step 2) only
+#     retried HTTP 502 for 6*10s=60s after the Step 0 lock-cleanup service
+#     restart. Observed in practice: /v1/tokens (lighter, nginx-fronted)
+#     comes back first and authenticates successfully well before
+#     domainmanager (which serves /v1/credentials) has finished
+#     reinitializing after a heavy restart (500+ stale tasks cleared).
+#     This caused the whole disable to abort on HTTP 502 before a single
+#     PATCH was ever attempted, leaving all auto-rotate policies enabled.
+#     Bumped to 24*10s=240s to match the margin already used elsewhere in
+#     this function for post-restart recovery.
 # v2.8 - 2026-03-27:
 #   - Post-config credential remediation: new remediate_all_sddc_credentials()
 #     sweeps every SSH credential in SDDC Manager's DB and REMEDIATEs any
@@ -4174,12 +4185,20 @@ def disable_sddc_auto_rotate(dry_run: bool = False) -> bool:
     }
 
     # Step 2: Get all credentials and find those with auto-rotate policies
-    # The credentials endpoint may return 502 briefly after service restart
+    # The credentials endpoint (backed by domainmanager) can stay on HTTP 502
+    # for well over 60s after the Step 0 lock-cleanup service restart -
+    # /v1/tokens (a lighter nginx-fronted endpoint) typically comes back
+    # first, well before domainmanager has finished reinitializing, so a
+    # successful auth here does NOT mean /v1/credentials is ready yet.
+    # 24 attempts * 10s = 240s gives real margin over the ~130-160s observed
+    # in practice (a prior 6*10s=60s budget was seen to time out here,
+    # aborting the whole disable before a single PATCH was ever attempted).
+    CRED_FETCH_ATTEMPTS = 24
     lsf.write_output(f'{sddc_host}: Checking for credentials with auto-rotate policies...')
     try:
         creds_url = f'https://{sddc_host}/v1/credentials'
         response = None
-        for cred_attempt in range(6):
+        for cred_attempt in range(CRED_FETCH_ATTEMPTS):
             response = requests.get(creds_url, headers=headers,
                                     verify=False, timeout=30)
             if response.status_code == 200:
@@ -4187,7 +4206,7 @@ def disable_sddc_auto_rotate(dry_run: bool = False) -> bool:
             if response.status_code in (502, 503):
                 lsf.write_output(f'{sddc_host}: Credentials API returned '
                                  f'HTTP {response.status_code} — '
-                                 f'retrying in 10s ({cred_attempt + 1}/6)')
+                                 f'retrying in 10s ({cred_attempt + 1}/{CRED_FETCH_ATTEMPTS})')
                 time.sleep(10)
             else:
                 break

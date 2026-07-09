@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 # VCFshutdown.py - HOLFY27 Core VCF Shutdown Module
-# Version 2.6 - March 2026
+# Version 2.7 - 08-July-2026
 # Author - Burke Azbill and HOL Core Team
 # Based on original shutdown work by Christopher Lewis (VCF Single Site Shutdown Script, v26.x)
 # VMware Cloud Foundation graceful shutdown sequence
+#
+# v 2.7 Changes:
+# - Phase 18 (Set Host Advanced Settings) now also checks/sets esxcli
+#   entropySources (VMkernel.Boot.entropySources) = 2 on each ESXi host,
+#   using Tools/set_esxi_entropy_sources.py. The setting is applied WITHOUT
+#   rebooting the host - Phase 20 powers the host off shortly after, so the
+#   change simply takes effect on its next natural boot.
 #
 # v 2.6 Changes:
 # - Added Phase 3b: Dynamic Supervisor Workload Shutdown
@@ -215,6 +222,8 @@ import time
 # Add hol directory to path
 sys.path.insert(0, '/home/holuser/hol')
 sys.path.insert(0, '/home/holuser/hol/Shutdown')
+sys.path.insert(0, '/home/holuser/hol/Tools')
+import set_esxi_entropy_sources as entropy
 
 # Default logging level
 logging.basicConfig(
@@ -229,7 +238,7 @@ logger = logging.getLogger(__name__)
 #==============================================================================
 
 MODULE_NAME = 'VCFshutdown'
-MODULE_VERSION = '2.6'
+MODULE_VERSION = '2.7'
 MODULE_DESCRIPTION = 'VMware Cloud Foundation graceful shutdown (VCF 9.x compliant)'
 
 # Status file for console display
@@ -2514,11 +2523,28 @@ def main(lsf=None, standalone=False, dry_run=False, phase=None):
                             vcf_write(lsf, f'    Settings applied successfully')
                         except Exception as e:
                             vcf_write(lsf, f'    Warning: Failed to set advanced settings: {e}')
+
+                        # Check/set entropySources. Do NOT reboot here - Phase 20
+                        # powers the host off shortly, so the change (if any)
+                        # simply takes effect on the host's next natural boot.
+                        try:
+                            current = entropy.get_entropy_value(host, esx_username, password)
+                            if current is None:
+                                vcf_write(lsf, f'    Warning: could not read {entropy.SETTING_KEY} via esxcli')
+                            elif current == entropy.SETTING_VALUE:
+                                vcf_write(lsf, f'    {entropy.SETTING_KEY} already {entropy.SETTING_VALUE}')
+                            elif entropy.set_entropy_value(host, esx_username, password, entropy.SETTING_VALUE):
+                                vcf_write(lsf, f'    {entropy.SETTING_KEY} set to {entropy.SETTING_VALUE} (applies on next boot)')
+                            else:
+                                vcf_write(lsf, f'    Warning: failed to set {entropy.SETTING_KEY}')
+                        except Exception as e:
+                            vcf_write(lsf, f'    Warning: entropy check/set failed: {e}')
                     vcf_write(lsf, 'Host advanced settings complete')
                 else:
                     vcf_write(lsf, 'No ESXi hosts configured - skipping')
             else:
                 vcf_write(lsf, f'Would set advanced settings on: {esx_hosts}')
+                vcf_write(lsf, f'Would check/set {entropy.SETTING_KEY} on: {esx_hosts}')
 
             #==========================================================================
             # TASK 19: vSAN Elevator Operations (OSA only - ESA does not use plog)

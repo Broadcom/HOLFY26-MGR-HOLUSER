@@ -1,4 +1,4 @@
-# ESXi.py version 1.12 12-May 2025
+# ESXi.py version 1.13 08-July-2026
 import datetime
 import os
 import sys
@@ -21,10 +21,10 @@ if len(sys.argv) > 1:
     if sys.argv[2] == "True":
         lsf.labcheck = True
         color = 'green'
-        lsf.write_output(f'{sys.argv[0]}: labcheck is {lsf.labcheck}')   
+        lsf.write_output(f'{sys.argv[0]}: labcheck is {lsf.labcheck}')
     else:
         lsf.labcheck = False
- 
+
 lsf.write_output(f'Running {sys.argv[0]}')
 
 ###
@@ -51,8 +51,14 @@ if esx_hosts:
                     lsf.write_output(f'Unable to test {host}. FAIL')
                     lsf.write_vpodprogress(f'{host} TIMEOUT', 'TIMEOUT', color=color)
 
+###
+# All ESXi hosts have booted. Ensure entropySources is correct BEFORE any
+# nested VMs are started (VCF.py / vSphere.py, which run next). A reboot is
+# safe to perform here since no VMs are running on the hosts yet.
+if esx_hosts:
+    lsf.write_vpodprogress('Checking ESXi entropy sources', 'GOOD-3', color=color)
+    sys.path.insert(0, '/home/holuser/hol/Tools')
+    import set_esxi_entropy_sources as entropy
 
-
-
-    
-
+    entropy_hosts = [entry.split(':')[0] for entry in esx_hosts]
+    entropy.ensure_entropy_sources(entropy_hosts, reboot=True)
