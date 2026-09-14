@@ -1,7 +1,7 @@
 #!/bin/bash
 # =============================================================================
 # k8s-renew-certs-5y.sh  v5
-# Date: 2026-07-08
+# Date: 2026-09-14
 # Renew ALL Kubernetes certificates with 5-year validity
 #
 # Features:
@@ -418,7 +418,7 @@ step "Step 6: Restarting control plane pods and kubelet"
 
 if [[ -n "$CRICTL" ]]; then
     info "[ Stopping control plane containers via crictl ]"
-    for POD in kube-apiserver kube-controller-manager kube-scheduler etcd; do
+    for POD in kube-apiserver kube-controller-manager kube-scheduler etcd kube-vip; do
         CID=$("$CRICTL" ps --name "^${POD}$" -q 2>/dev/null | head -1 || true)
         if [[ -n "$CID" ]]; then
             "$CRICTL" stop "$CID" >/dev/null 2>&1 && info "  Stopped: $POD (container $CID)"
